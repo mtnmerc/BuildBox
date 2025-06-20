@@ -3,7 +3,7 @@ import { Github, Download, Upload, Settings, Smartphone } from 'lucide-react';
 import FileTree from './components/FileTree';
 import VSCodeEditor from './components/VSCodeEditor';
 import Preview from './components/Preview';
-import AIAgent from './components/AIAgent';
+import ConversationalAgent from './components/ConversationalAgent';
 import { pushChanges } from './firebase';
 
 function App() {
@@ -152,6 +152,7 @@ function App() {
         <FileTree 
           onFileSelect={handleFileSelect} 
           selectedFile={selectedFile}
+          onFilesLoaded={setFiles}
         />
 
         {/* Editor and Preview Area */}
@@ -178,10 +179,11 @@ function App() {
       </div>
 
       {/* AI Agent */}
-      <AIAgent 
+      <ConversationalAgent 
         selectedFile={selectedFile} 
         onCodeUpdate={handleFileSave}
         files={files}
+        onFilesLoaded={setFiles}
       />
     </div>
   );

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Folder, File, ChevronRight, ChevronDown, Github } from 'lucide-react';
 import { pullRepo } from '../firebase';
 
-const FileTree = ({ onFileSelect, selectedFile }) => {
+const FileTree = ({ onFileSelect, selectedFile, onFilesLoaded }) => {
   const [files, setFiles] = useState([]);
   const [loading, setLoading] = useState(false);
   const [expandedFolders, setExpandedFolders] = useState(new Set());
@@ -12,16 +12,25 @@ const FileTree = ({ onFileSelect, selectedFile }) => {
     setLoading(true);
     try {
       const result = await pullRepo({ 
-        repo: 'mtnmerc/BlueCollarBizWorx-1',
+        repo: 'mtnmerc/BuildBox',
         branch: 'main'
       });
       
       if (result.data.success) {
-        setFiles(result.data.files);
+        const loadedFiles = result.data.files;
+        setFiles(loadedFiles);
         setRepoLoaded(true);
+        
+        if (onFilesLoaded) {
+          onFilesLoaded(loadedFiles);
+        }
+      } else {
+        console.error('Failed to load repo:', result.data.error);
+        alert('Failed to load repository: ' + result.data.error);
       }
     } catch (error) {
       console.error('Error loading repo:', error);
+      alert('Error loading repository. Please check your internet connection and try again.');
     } finally {
       setLoading(false);
     }
@@ -109,6 +118,11 @@ const FileTree = ({ onFileSelect, selectedFile }) => {
         >
           {loading ? 'Loading...' : repoLoaded ? 'Reload Repo' : 'Load Repo'}
         </button>
+        {repoLoaded && (
+          <div className="mt-2 text-xs text-green-400">
+            ✓ Repository loaded successfully
+          </div>
+        )}
       </div>
       
       <div className="flex-1 overflow-y-auto p-2">
