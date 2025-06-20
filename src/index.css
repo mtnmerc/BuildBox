@@ -18,6 +18,169 @@ code {
     monospace;
 }
 
+/* VS Code-like Editor Styles */
+.line-numbers {
+  width: 60px;
+  background-color: #1e1e1e;
+  border-right: 1px solid #3c3c3c;
+  padding: 1rem 0.5rem;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 14px;
+  color: #858585;
+  text-align: right;
+  user-select: none;
+}
+
+.line-number {
+  line-height: 1.5;
+  padding: 0 0.25rem;
+}
+
+/* Syntax Highlighting */
+.keyword {
+  color: #569cd6;
+}
+
+.literal {
+  color: #b5cea8;
+}
+
+.string {
+  color: #ce9178;
+}
+
+.comment {
+  color: #6a9955;
+}
+
+/* Mobile Responsive */
+@media (max-width: 768px) {
+  .line-numbers {
+    width: 40px;
+    font-size: 12px;
+  }
+  
+  .line-number {
+    padding: 0 0.125rem;
+  }
+}
+
+/* Scrollbar Styling */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #1e1e1e;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #424242;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #4f4f4f;
+}
+
+/* Focus styles */
+textarea:focus {
+  outline: none;
+  border: none;
+}
+
+/* Button hover effects */
+button:hover {
+  transition: all 0.2s ease-in-out;
+}
+
+/* Terminal styling */
+.terminal-output {
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  line-height: 1.4;
+}
+
+/* Git status colors */
+.git-status-added {
+  color: #4ec9b0;
+}
+
+.git-status-modified {
+  color: #d7ba7d;
+}
+
+.git-status-deleted {
+  color: #f44747;
+}
+
+/* Search highlighting */
+.search-highlight {
+  background-color: #264f78;
+  border-radius: 2px;
+}
+
+/* Settings panel */
+.settings-panel {
+  background-color: #252526;
+  border-left: 1px solid #3c3c3c;
+}
+
+/* Tab styling */
+.tab-active {
+  background-color: #1e1e1e;
+  border-bottom: 2px solid #007acc;
+}
+
+.tab-inactive {
+  background-color: #2d2d30;
+  border-bottom: 2px solid transparent;
+}
+
+/* Status bar */
+.status-bar {
+  background-color: #007acc;
+  color: #ffffff;
+  font-size: 12px;
+  padding: 2px 8px;
+}
+
+/* Sidebar */
+.sidebar {
+  background-color: #252526;
+  border-right: 1px solid #3c3c3c;
+}
+
+/* File tree */
+.file-tree-item {
+  padding: 4px 8px;
+  cursor: pointer;
+  border-radius: 2px;
+}
+
+.file-tree-item:hover {
+  background-color: #2a2d2e;
+}
+
+.file-tree-item.selected {
+  background-color: #37373d;
+}
+
+/* PWA specific styles */
+@media (display-mode: standalone) {
+  body {
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  
+  /* Allow text selection in editor */
+  textarea {
+    -webkit-user-select: text;
+    user-select: text;
+  }
+}
+
 /* Custom scrollbar */
 ::-webkit-scrollbar {
   width: 8px;

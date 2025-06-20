@@ -31,9 +31,102 @@ const corsHandler = (req, res) => {
 // AI Code Editing Function
 exports.editWithAI = functions.https.onCall(async (data, context) => {
   try {
-    const { prompt, filePath, fileName, currentContent, language, repoContext, mode } = data;
+    const { prompt, filePath, fileName, currentContent, language, repoContext, mode, projectContext } = data;
 
-    if (mode === 'repo') {
+    if (mode === 'plan') {
+      // New plan-and-edit mode
+      if (!prompt || !projectContext) {
+        return {
+          success: false,
+          error: 'Missing required parameters for plan mode'
+        };
+      }
+
+      const systemPrompt = `You are an expert software architect and developer. Your task is to analyze a project and create a detailed, structured plan to achieve a specific goal.
+
+IMPORTANT: You must respond with ONLY valid JSON in the exact format specified. No markdown, no explanations outside the JSON.
+
+Rules:
+1. Analyze the entire project structure and context
+2. Create a comprehensive plan that addresses the goal
+3. Identify all files that need to be created, modified, or deleted
+4. Provide specific, actionable steps
+5. Consider dependencies and implementation order
+6. Ensure the plan is realistic and achievable
+7. Return ONLY the JSON response, no other text
+
+Required JSON Format:
+{
+  "plan": "Brief description of what will be done",
+  "explanation": "Detailed explanation of the approach and reasoning",
+  "files": [
+    {
+      "filename": "path/to/file.js",
+      "action": "create|edit|delete",
+      "content": "full file content (for create action)",
+      "diff": "specific changes in unified diff format (for edit action)",
+      "reason": "why this change is needed"
+    }
+  ],
+  "dependencies": ["list of any new npm packages needed"],
+  "steps": ["step1", "step2", "step3"]
+}
+
+Project Context:
+- Goal: ${projectContext.goal}
+- Mode: ${projectContext.mode}
+- Files: ${projectContext.files.length} files available
+- Selected File: ${projectContext.selectedFile ? projectContext.selectedFile.name : 'None'}
+
+Available Files:
+${projectContext.files.map(f => `${f.path} (${f.language})`).join('\n')}
+
+User Goal: ${prompt}`;
+
+      const completion = await openai.chat.completions.create({
+        model: "gpt-4",
+        messages: [
+          {
+            role: "system",
+            content: systemPrompt
+          },
+          {
+            role: "user",
+            content: `Please create a detailed plan to achieve this goal: "${prompt}"
+
+Here are the current project files:
+${projectContext.files.map(f => `\n--- ${f.path} ---\n${f.content}`).join('\n')}
+
+Return ONLY the JSON plan, no other text.`
+          }
+        ],
+        temperature: 0.1,
+        max_tokens: 8000
+      });
+
+      const response = completion.choices[0].message.content.trim();
+      
+      // Try to extract JSON from the response
+      let jsonResponse;
+      try {
+        // Remove any markdown formatting if present
+        const cleanResponse = response.replace(/```json\n?/g, '').replace(/```\n?/g, '');
+        jsonResponse = JSON.parse(cleanResponse);
+      } catch (parseError) {
+        console.error('JSON Parse Error:', parseError);
+        console.error('Raw Response:', response);
+        return {
+          success: false,
+          error: 'Invalid JSON response from AI. Please try again.'
+        };
+      }
+
+      return {
+        success: true,
+        response: JSON.stringify(jsonResponse, null, 2)
+      };
+
+    } else if (mode === 'repo') {
       if (!prompt || !repoContext) {
         return {
           success: false,

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Github, Download, Upload, Settings, Smartphone } from 'lucide-react';
 import FileTree from './components/FileTree';
-import CodeEditor from './components/Editor';
+import VSCodeEditor from './components/VSCodeEditor';
 import Preview from './components/Preview';
 import AIAgent from './components/AIAgent';
 import { pushChanges } from './firebase';
@@ -159,7 +159,7 @@ function App() {
           {/* Code Editor */}
           {(layout === 'editor' || layout === 'split') && (
             <div className="flex flex-col">
-              <CodeEditor
+              <VSCodeEditor
                 file={selectedFile}
                 onSave={handleFileSave}
                 onContentChange={handleFileContentChange}
@@ -179,8 +179,9 @@ function App() {
 
       {/* AI Agent */}
       <AIAgent 
-        selectedFile={selectedFile}
-        onCodeUpdate={handleCodeUpdate}
+        selectedFile={selectedFile} 
+        onCodeUpdate={handleFileSave}
+        files={files}
       />
     </div>
   );

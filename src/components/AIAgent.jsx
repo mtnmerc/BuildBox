@@ -1,14 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import { Bot, Send, Sparkles, Loader2, MessageSquare, Zap, Code, FileText } from 'lucide-react';
+import { Bot, Send, Sparkles, Loader2, MessageSquare, Zap, Code, FileText, Target, List, CheckCircle } from 'lucide-react';
 import { editWithAI, pullRepo } from '../firebase';
 
-const AIAgent = ({ selectedFile, onCodeUpdate }) => {
+const AIAgent = ({ selectedFile, onCodeUpdate, files }) => {
   const [prompt, setPrompt] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [chatHistory, setChatHistory] = useState([]);
   const [isExpanded, setIsExpanded] = useState(false);
   const [repoContext, setRepoContext] = useState(null);
   const [mode, setMode] = useState('file'); // 'file' or 'repo'
+  const [currentPlan, setCurrentPlan] = useState(null);
+  const [planStep, setPlanStep] = useState(0); // 0: input, 1: plan, 2: execution
 
   useEffect(() => {
     // Load repository context when switching to repo mode
@@ -21,7 +23,7 @@ const AIAgent = ({ selectedFile, onCodeUpdate }) => {
     setIsLoading(true);
     try {
       const result = await pullRepo({
-        repo: 'mtnmerc/BuildBox', // You can make this configurable
+        repo: 'mtnmerc/BuildBox',
         branch: 'main'
       });
 
@@ -51,19 +53,130 @@ const AIAgent = ({ selectedFile, onCodeUpdate }) => {
     }
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (!prompt.trim()) return;
-    if (mode === 'file' && !selectedFile) {
+  const generatePlan = async (goal) => {
+    setIsLoading(true);
+    try {
+      // Create a comprehensive context of the project
+      const projectContext = {
+        goal: goal,
+        files: files.map(f => ({
+          name: f.name,
+          path: f.path,
+          content: f.content,
+          language: getLanguageFromExtension(f.name)
+        })),
+        mode: mode,
+        selectedFile: selectedFile
+      };
+
+      const result = await editWithAI({
+        prompt: `Generate a structured plan to achieve this goal: "${goal}"
+
+Please analyze the project structure and return a JSON plan with the following format:
+{
+  "plan": "Brief description of what will be done",
+  "explanation": "Detailed explanation of the approach",
+  "files": [
+    {
+      "filename": "path/to/file.js",
+      "action": "create|edit|delete",
+      "content": "full file content (for create)",
+      "diff": "specific changes (for edit)",
+      "reason": "why this change is needed"
+    }
+  ],
+  "dependencies": ["list of any new dependencies needed"],
+  "steps": ["step1", "step2", "step3"]
+}`,
+        projectContext: projectContext,
+        mode: 'plan'
+      });
+
+      if (result.data.success) {
+        try {
+          const plan = JSON.parse(result.data.response);
+          setCurrentPlan(plan);
+          setPlanStep(1);
+          
+          const planMessage = {
+            id: Date.now(),
+            type: 'plan',
+            content: plan,
+            timestamp: new Date().toLocaleTimeString()
+          };
+          setChatHistory(prev => [...prev, planMessage]);
+        } catch (parseError) {
+          throw new Error('Invalid plan format received from AI');
+        }
+      } else {
+        throw new Error(result.data.error);
+      }
+    } catch (error) {
+      console.error('Plan Generation Error:', error);
       const errorMessage = {
         id: Date.now(),
         type: 'error',
-        content: 'Please select a file first',
+        content: error.message || 'Failed to generate plan',
         timestamp: new Date().toLocaleTimeString()
       };
       setChatHistory(prev => [...prev, errorMessage]);
-      return;
+    } finally {
+      setIsLoading(false);
     }
+  };
+
+  const executePlan = async () => {
+    if (!currentPlan) return;
+    
+    setIsLoading(true);
+    try {
+      // Execute each file change in the plan
+      for (const fileChange of currentPlan.files) {
+        if (fileChange.action === 'create') {
+          // Create new file
+          const newFile = {
+            name: fileChange.filename.split('/').pop(),
+            path: fileChange.filename,
+            content: fileChange.content,
+            isModified: false
+          };
+          
+          // Add to files array and trigger update
+          // This would need to be handled by the parent component
+          console.log('Creating file:', newFile);
+        } else if (fileChange.action === 'edit') {
+          // Apply diff to existing file
+          console.log('Editing file:', fileChange.filename);
+          // This would need diff parsing and application
+        }
+      }
+
+      const successMessage = {
+        id: Date.now(),
+        type: 'success',
+        content: `Successfully executed plan: ${currentPlan.plan}`,
+        timestamp: new Date().toLocaleTimeString()
+      };
+      setChatHistory(prev => [...prev, successMessage]);
+      setCurrentPlan(null);
+      setPlanStep(0);
+    } catch (error) {
+      console.error('Plan Execution Error:', error);
+      const errorMessage = {
+        id: Date.now(),
+        type: 'error',
+        content: 'Failed to execute plan: ' + error.message,
+        timestamp: new Date().toLocaleTimeString()
+      };
+      setChatHistory(prev => [...prev, errorMessage]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!prompt.trim()) return;
 
     const userMessage = {
       id: Date.now(),
@@ -74,71 +187,9 @@ const AIAgent = ({ selectedFile, onCodeUpdate }) => {
 
     setChatHistory(prev => [...prev, userMessage]);
     setPrompt('');
-    setIsLoading(true);
 
-    try {
-      if (mode === 'file') {
-        const result = await editWithAI({
-          prompt: prompt,
-          filePath: selectedFile.path,
-          fileName: selectedFile.name,
-          currentContent: selectedFile.content,
-          language: getLanguageFromExtension(selectedFile.name)
-        });
-
-        if (result.data.success) {
-          const aiMessage = {
-            id: Date.now() + 1,
-            type: 'ai',
-            content: result.data.explanation || 'Code updated successfully!',
-            timestamp: new Date().toLocaleTimeString(),
-            codeChanges: result.data.modifiedContent
-          };
-
-          setChatHistory(prev => [...prev, aiMessage]);
-          
-          if (onCodeUpdate && result.data.modifiedContent) {
-            onCodeUpdate({
-              ...selectedFile,
-              content: result.data.modifiedContent
-            });
-          }
-        } else {
-          throw new Error(result.data.error);
-        }
-      } else {
-        // Repository-wide context mode
-        const result = await editWithAI({
-          prompt: prompt,
-          repoContext: repoContext,
-          mode: 'repo'
-        });
-
-        if (result.data.success) {
-          const aiMessage = {
-            id: Date.now() + 1,
-            type: 'ai',
-            content: result.data.response,
-            timestamp: new Date().toLocaleTimeString()
-          };
-
-          setChatHistory(prev => [...prev, aiMessage]);
-        } else {
-          throw new Error(result.data.error);
-        }
-      }
-    } catch (error) {
-      console.error('AI Error:', error);
-      const errorMessage = {
-        id: Date.now() + 1,
-        type: 'error',
-        content: error.message || 'Failed to process request',
-        timestamp: new Date().toLocaleTimeString()
-      };
-      setChatHistory(prev => [...prev, errorMessage]);
-    } finally {
-      setIsLoading(false);
-    }
+    // Generate plan for the goal
+    await generatePlan(prompt);
   };
 
   const getLanguageFromExtension = (filename) => {
@@ -175,6 +226,10 @@ const AIAgent = ({ selectedFile, onCodeUpdate }) => {
         return <MessageSquare size={16} className="text-blue-400" />;
       case 'ai':
         return <Bot size={16} className="text-green-400" />;
+      case 'plan':
+        return <Target size={16} className="text-purple-400" />;
+      case 'success':
+        return <CheckCircle size={16} className="text-green-400" />;
       case 'error':
         return <Zap size={16} className="text-red-400" />;
       case 'system':
@@ -190,6 +245,10 @@ const AIAgent = ({ selectedFile, onCodeUpdate }) => {
         return 'bg-blue-600 text-white ml-auto';
       case 'ai':
         return 'bg-gray-700 text-white';
+      case 'plan':
+        return 'bg-purple-600 text-white';
+      case 'success':
+        return 'bg-green-600 text-white';
       case 'error':
         return 'bg-red-600 text-white';
       case 'system':
@@ -199,24 +258,91 @@ const AIAgent = ({ selectedFile, onCodeUpdate }) => {
     }
   };
 
-  const suggestedPrompts = mode === 'file' ? [
-    "Fix any bugs in this code",
-    "Add error handling",
-    "Optimize performance",
-    "Add comments to explain the code",
-    "Refactor for better readability",
-    "Add input validation",
-    "Implement responsive design",
-    "Add accessibility features"
-  ] : [
-    "Explain the project structure",
-    "Find all API endpoints",
-    "List all React components",
-    "Show me where state management is used",
-    "Find security vulnerabilities",
-    "Suggest architectural improvements",
-    "List all dependencies",
-    "Show me the data flow"
+  const renderPlan = (plan) => {
+    return (
+      <div className="bg-gray-800 rounded-lg p-4 mt-2">
+        <div className="flex items-center space-x-2 mb-3">
+          <Target size={16} className="text-purple-400" />
+          <h4 className="font-semibold text-white">{plan.plan}</h4>
+        </div>
+        
+        <p className="text-gray-300 text-sm mb-4">{plan.explanation}</p>
+        
+        <div className="space-y-3">
+          <div>
+            <h5 className="text-sm font-medium text-white mb-2">Files to modify:</h5>
+            <div className="space-y-2">
+              {plan.files.map((file, index) => (
+                <div key={index} className="bg-gray-700 rounded p-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-gray-300">{file.filename}</span>
+                    <span className={`text-xs px-2 py-1 rounded ${
+                      file.action === 'create' ? 'bg-green-600' :
+                      file.action === 'edit' ? 'bg-yellow-600' :
+                      'bg-red-600'
+                    }`}>
+                      {file.action}
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-400 mt-1">{file.reason}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+          
+          {plan.dependencies && plan.dependencies.length > 0 && (
+            <div>
+              <h5 className="text-sm font-medium text-white mb-2">Dependencies:</h5>
+              <div className="flex flex-wrap gap-2">
+                {plan.dependencies.map((dep, index) => (
+                  <span key={index} className="bg-blue-600 text-white text-xs px-2 py-1 rounded">
+                    {dep}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+          
+          <div>
+            <h5 className="text-sm font-medium text-white mb-2">Steps:</h5>
+            <ol className="list-decimal list-inside space-y-1 text-sm text-gray-300">
+              {plan.steps.map((step, index) => (
+                <li key={index}>{step}</li>
+              ))}
+            </ol>
+          </div>
+        </div>
+        
+        <div className="mt-4 flex space-x-2">
+          <button
+            onClick={executePlan}
+            className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded text-sm font-medium"
+          >
+            Execute Plan
+          </button>
+          <button
+            onClick={() => {
+              setCurrentPlan(null);
+              setPlanStep(0);
+            }}
+            className="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded text-sm font-medium"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    );
+  };
+
+  const suggestedGoals = [
+    "Add Firebase authentication with email/password",
+    "Create a new React component for user profile",
+    "Add error handling to the API calls",
+    "Implement responsive design for mobile",
+    "Add unit tests for the main components",
+    "Create a new API endpoint for user data",
+    "Add dark mode toggle functionality",
+    "Implement file upload feature"
   ];
 
   return (
@@ -230,7 +356,7 @@ const AIAgent = ({ selectedFile, onCodeUpdate }) => {
       >
         <div className="flex items-center space-x-2">
           <Bot size={20} className="text-green-400" />
-          <span className="text-sm font-medium text-white">AI Assistant</span>
+          <span className="text-sm font-medium text-white">AI Coding Agent</span>
           {isLoading && (
             <Loader2 size={16} className="text-green-400 animate-spin" />
           )}
@@ -280,25 +406,23 @@ const AIAgent = ({ selectedFile, onCodeUpdate }) => {
           <div className="flex-1 overflow-y-auto p-4 space-y-3 max-h-[calc(500px-120px)]">
             {chatHistory.length === 0 ? (
               <div className="text-center text-gray-400 py-8">
-                <Bot size={48} className="mx-auto mb-4" />
+                <Target size={48} className="mx-auto mb-4" />
                 <h3 className="text-lg font-semibold mb-2">
-                  {mode === 'file' ? 'AI Code Assistant' : 'Repository Assistant'}
+                  AI Coding Agent
                 </h3>
                 <p className="text-sm mb-4">
-                  {mode === 'file' 
-                    ? 'Ask me to modify your code using natural language'
-                    : 'Ask me anything about the codebase'}
+                  Describe your coding goal and I'll create a detailed plan to achieve it
                 </p>
                 
-                {/* Suggested Prompts */}
-                <div className="grid grid-cols-2 gap-2 max-w-md mx-auto">
-                  {suggestedPrompts.map((suggestion, index) => (
+                {/* Suggested Goals */}
+                <div className="grid grid-cols-1 gap-2 max-w-md mx-auto">
+                  {suggestedGoals.map((goal, index) => (
                     <button
                       key={index}
-                      onClick={() => setPrompt(suggestion)}
+                      onClick={() => setPrompt(goal)}
                       className="text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 px-3 py-2 rounded text-left"
                     >
-                      {suggestion}
+                      {goal}
                     </button>
                   ))}
                 </div>
@@ -311,11 +435,7 @@ const AIAgent = ({ selectedFile, onCodeUpdate }) => {
                   </div>
                   <div className={`flex-1 max-w-xs px-3 py-2 rounded-lg text-sm ${getMessageClass(message.type)}`}>
                     <div className="mb-1">{message.content}</div>
-                    {message.codeChanges && (
-                      <div className="mt-2 p-2 bg-gray-800 rounded text-xs font-mono">
-                        <pre>{message.codeChanges}</pre>
-                      </div>
-                    )}
+                    {message.type === 'plan' && renderPlan(message.content)}
                     <div className="text-xs opacity-70">{message.timestamp}</div>
                   </div>
                 </div>
@@ -330,9 +450,7 @@ const AIAgent = ({ selectedFile, onCodeUpdate }) => {
                 type="text"
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
-                placeholder={mode === 'file' 
-                  ? "Type your code modification request..."
-                  : "Ask anything about the codebase..."}
+                placeholder="Describe your coding goal (e.g., 'Add Firebase auth', 'Create a new component')"
                 className="flex-1 bg-gray-800 text-white rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
                 disabled={isLoading}
               />

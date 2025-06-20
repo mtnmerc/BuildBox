@@ -4,7 +4,6 @@
   "description": "Personal development environment with AI code editing",
   "private": true,
   "dependencies": {
-    "@monaco-editor/react": "^4.6.0",
     "autoprefixer": "^10.4.16",
     "es-abstract": "^1.24.0",
     "firebase": "^10.7.0",
