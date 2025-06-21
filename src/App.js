@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Github, Download, Upload, Settings, Smartphone, MessageCircle, Plus, Code, FileText, Sparkles, X } from 'lucide-react';
+import { Upload, MessageCircle, FileText, Sparkles, X } from 'lucide-react';
 import FileTree from './components/FileTree';
 import VSCodeEditor from './components/VSCodeEditor';
 import Preview from './components/Preview';
