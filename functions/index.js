@@ -276,7 +276,8 @@ exports.pullRepo = functions
     const urlParts = repoUrl.split('/');
     const owner = urlParts[urlParts.length - 2];
     const repo = urlParts[urlParts.length - 1].replace('.git', '');
-    const tempDir = `/tmp/${owner}-${repo}-${Date.now()}`;
+    const repoDir = `${owner}-${repo}-${Date.now()}`;
+    const tempDir = path.join('/tmp', repoDir);
     console.log(`pullRepo: Cloning into temporary directory: ${tempDir}`);
 
     try {
