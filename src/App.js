@@ -7,10 +7,6 @@ import ConversationalAgent from './components/ConversationalAgent';
 import { pushChanges } from './firebase';
 
 function App() {
-  console.log('🚨 App.js loaded at:', new Date().toLocaleString());
-  console.log('🚨 Current layout:', layout);
-  console.log('🚨 Is mobile:', isMobile);
-  
   const [selectedFile, setSelectedFile] = useState(null);
   const [files, setFiles] = useState([]);
   const [repoUrl, setRepoUrl] = useState('https://github.com/mtnmerc/BuilderBox');
@@ -19,6 +15,10 @@ function App() {
   const [showFileTree, setShowFileTree] = useState(false);
   const [showAI, setShowAI] = useState(true);
 
+  console.log('🚨 App.js loaded at:', new Date().toLocaleString());
+  console.log('🚨 Current layout:', layout);
+  console.log('🚨 Is mobile:', isMobile);
+  
   useEffect(() => {
     const checkMobile = () => {
       setIsMobile(window.innerWidth < 768);
@@ -105,8 +105,10 @@ function App() {
   return (
     <div className="h-screen bg-gray-900 flex flex-col">
       {/* DEBUG BANNER - REMOVE AFTER CONFIRMING CHANGES WORK */}
-      <div className="bg-red-600 text-white text-center py-2 px-4 font-bold text-lg">
+      <div className="bg-red-600 text-white text-center py-4 px-4 font-bold text-2xl animate-pulse border-4 border-yellow-400">
         🚨 DEBUG: NEW REPLIT STYLE INTERFACE - DEPLOYED AT {new Date().toLocaleString()} 🚨
+        <br />
+        <span className="text-lg">If you see this, the deployment is working!</span>
       </div>
 
       {/* Header */}
