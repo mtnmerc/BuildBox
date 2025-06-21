@@ -9,7 +9,7 @@ import { pushChanges } from './firebase';
 function App() {
   const [selectedFile, setSelectedFile] = useState(null);
   const [files, setFiles] = useState([]);
-  const [repoUrl, setRepoUrl] = useState('https://github.com/mtnmerc/BuilderBox');
+  const [repoUrl, setRepoUrl] = useState('https://github.com/mtnmerc/BuildBox');
   const [layout, setLayout] = useState('editor'); // editor, preview, split
   const [isMobile, setIsMobile] = useState(false);
   const [showFileTree, setShowFileTree] = useState(false);
