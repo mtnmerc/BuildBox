@@ -135,6 +135,7 @@ JSON Format:
 
 // Pull Repository Function
 exports.pullRepo = functions
+  .runWith({ memory: '1GB', timeoutSeconds: 120 })
   .https.onCall(async (data, context) => {
   console.log('pullRepo: Function triggered.');
   try {
@@ -163,9 +164,11 @@ exports.pullRepo = functions
     console.log(`pullRepo: Cloning into temporary directory: ${tempDir}`);
 
     try {
-      // Use the authenticated URL for cloning
-      await execAsync(`git clone --depth 1 ${authedRepoUrl} ${tempDir}`);
-      console.log('pullRepo: Git clone successful.');
+      // Use sparse checkout to ignore large binary files
+      await execAsync(`git clone --depth 1 --filter=blob:none --no-checkout ${authedRepoUrl} ${tempDir}`);
+      await execAsync(`git -C ${tempDir} sparse-checkout set --no-cone "/*" "!*.msi" "!*.exe" "!*.zip"`);
+      await execAsync(`git -C ${tempDir} checkout`);
+      console.log('pullRepo: Git clone with sparse checkout successful.');
     } catch (cloneError) {
       console.error('pullRepo: Git clone failed.', cloneError);
       return { data: { success: false, error: `Failed to clone repository: ${cloneError.message}` } };
