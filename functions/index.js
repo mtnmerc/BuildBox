@@ -404,7 +404,8 @@ exports.callOpenAI = functions
   });
   
   try {
-    const { message, context: projectContext, mode = 'conversational' } = data;
+    const { message, context: projectContextString, mode = 'conversational' } = data;
+    const projectContext = JSON.parse(projectContextString || '{}');
 
     if (!message) {
       return {

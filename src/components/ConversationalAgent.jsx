@@ -253,7 +253,7 @@ const ConversationalAgent = ({ selectedFile, files, onCreateFile, onUpdateFile }
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div className="flex-1 p-4 overflow-y-auto">
         {messages.length === 0 && (
           <div className="text-center py-8">
             <div className="w-20 h-20 bg-gradient-to-br from-purple-500 to-blue-600 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -287,18 +287,17 @@ const ConversationalAgent = ({ selectedFile, files, onCreateFile, onUpdateFile }
 
         {messages.map(renderMessage)}
 
-        {/* Typing Indicator */}
         {isTyping && (
           <div className="flex justify-start mb-4">
             <div className="flex items-start space-x-2">
-              <div className="w-8 h-8 bg-gradient-to-br from-purple-500 to-blue-600 rounded-full flex items-center justify-center">
-                <Zap size={16} className="text-white" />
+              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-blue-600 text-white flex items-center justify-center">
+                <Zap size={16} />
               </div>
-              <div className="bg-white p-3 rounded-2xl shadow-lg border border-gray-200">
-                <div className="flex space-x-1">
-                  <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
-                  <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
-                  <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+              <div className="p-3 rounded-2xl bg-white text-gray-900 shadow-lg border border-gray-200">
+                <div className="flex items-center space-x-2">
+                  <div className="w-2 h-2 bg-gray-400 rounded-full animate-pulse"></div>
+                  <div className="w-2 h-2 bg-gray-400 rounded-full animate-pulse delay-75"></div>
+                  <div className="w-2 h-2 bg-gray-400 rounded-full animate-pulse delay-150"></div>
                 </div>
               </div>
             </div>
@@ -309,47 +308,29 @@ const ConversationalAgent = ({ selectedFile, files, onCreateFile, onUpdateFile }
       </div>
 
       {/* Input Area */}
-      <div className="border-t border-gray-200 p-4 bg-white">
-        <div className="flex items-end space-x-2">
-          <div className="flex-1 relative">
-            <textarea
-              ref={inputRef}
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyPress={handleKeyPress}
-              placeholder="Ask me anything about your code..."
-              className="w-full p-3 pr-12 border border-gray-300 rounded-2xl resize-none focus:ring-2 focus:ring-blue-500 focus:border-transparent shadow-sm"
-              rows="1"
-              style={{ minHeight: '44px', maxHeight: '120px' }}
-            />
-            <button
-              onClick={handleSendMessage}
-              disabled={!input.trim() || isLoading}
-              className="absolute right-2 bottom-2 p-2 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 disabled:from-gray-300 disabled:to-gray-400 text-white rounded-full transition-all shadow-lg"
-            >
-              {isLoading ? (
-                <Loader2 size={16} className="animate-spin" />
-              ) : (
-                <Send size={16} />
-              )}
-            </button>
-          </div>
+      <div className="p-4 bg-white border-t border-gray-200">
+        <div className="relative">
+          <textarea
+            ref={inputRef}
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyPress={handleKeyPress}
+            placeholder="Ask me anything about your code..."
+            className="w-full pl-4 pr-12 py-3 rounded-full bg-gray-100 text-gray-900 border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all resize-none"
+            rows={1}
+            style={{ overflowY: 'hidden' }}
+          />
+          <button
+            onClick={handleSendMessage}
+            disabled={isLoading || !input.trim()}
+            className="absolute right-2 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-blue-600 text-white flex items-center justify-center disabled:bg-gray-400 disabled:cursor-not-allowed transition-all hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+          >
+            {isLoading ? <Loader2 className="animate-spin" size={20} /> : <Send size={20} />}
+          </button>
         </div>
-        
-        {/* Quick Actions */}
-        <div className="flex items-center justify-between mt-2 text-xs text-gray-500">
-          <span>Press Enter to send, Shift+Enter for new line</span>
-          <div className="flex items-center space-x-4">
-            <button className="flex items-center space-x-1 hover:text-gray-700 transition-colors">
-              <FileText size={12} />
-              <span>Files</span>
-            </button>
-            <button className="flex items-center space-x-1 hover:text-gray-700 transition-colors">
-              <Code size={12} />
-              <span>Code</span>
-            </button>
-          </div>
-        </div>
+        <p className="text-xs text-gray-400 mt-2 text-center">
+          Press Enter to send, Shift+Enter for new line.
+        </p>
       </div>
     </div>
   );
