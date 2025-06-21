@@ -255,109 +255,57 @@ Return ONLY the JSON plan, no other text.`
 });
 
 // Pull Repository Function
-exports.pullRepo = functions.https.onCall(async (data, context) => {
+exports.pullRepo = functions
+  .runWith({ secrets: ["GITHUB_TOKEN"] })
+  .https.onCall(async (data, context) => {
+  console.log('pullRepo: Function triggered.');
   try {
     const { repoUrl } = data;
-    
+    console.log(`pullRepo: Received repoUrl: ${repoUrl}`);
+
     if (!repoUrl) {
-      return {
-        data: {
-          success: false,
-          error: 'No repository URL provided'
-        }
-      };
+      console.error('pullRepo: No repository URL provided.');
+      return { data: { success: false, error: 'No repository URL provided' } };
     }
 
-    // Extract owner and repo name from URL
+    const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
+    if (!GITHUB_TOKEN) {
+      console.error('pullRepo: GITHUB_TOKEN secret is not available.');
+      return { data: { success: false, error: 'Authentication token is not configured on the server.' } };
+    }
+
+    // Modify the repoUrl to include the token for authentication
+    const authedRepoUrl = repoUrl.replace('https://', `https://${GITHUB_TOKEN}@`);
+    
     const urlParts = repoUrl.split('/');
     const owner = urlParts[urlParts.length - 2];
     const repo = urlParts[urlParts.length - 1].replace('.git', '');
-
-    // Clone the repository
     const tempDir = `/tmp/${owner}-${repo}-${Date.now()}`;
-    
+    console.log(`pullRepo: Cloning into temporary directory: ${tempDir}`);
+
     try {
-      await execAsync(`git clone ${repoUrl} ${tempDir}`);
+      // Use the authenticated URL for cloning
+      await execAsync(`git clone --depth 1 ${authedRepoUrl} ${tempDir}`);
+      console.log('pullRepo: Git clone successful.');
     } catch (cloneError) {
-      return {
-        data: {
-          success: false,
-          error: `Failed to clone repository: ${cloneError.message}`
-        }
-      };
+      console.error('pullRepo: Git clone failed.', cloneError);
+      return { data: { success: false, error: `Failed to clone repository: ${cloneError.message}` } };
     }
 
-    // Read all files
-    const files = [];
-    
-    async function readDirectory(dirPath, basePath = '') {
-      try {
-        const items = await fs.readdir(dirPath);
-        
-        for (const item of items) {
-          const fullPath = path.join(dirPath, item);
-          const relativePath = path.join(basePath, item);
-          
-          try {
-            const stat = await fs.stat(fullPath);
-            
-            if (stat.isDirectory()) {
-              // Skip node_modules, .git, and other common directories
-              if (!['node_modules', '.git', '.vscode', 'dist', 'build'].includes(item)) {
-                await readDirectory(fullPath, relativePath);
-              }
-            } else {
-              // Skip binary files and large files
-              const ext = path.extname(item).toLowerCase();
-              const skipExtensions = ['.png', '.jpg', '.jpeg', '.gif', '.ico', '.svg', '.woff', '.woff2', '.ttf', '.eot'];
-              
-              if (!skipExtensions.includes(ext) && stat.size < 1024 * 1024) { // Skip files larger than 1MB
-                try {
-                  const content = await fs.readFile(fullPath, 'utf8');
-                  files.push({
-                    name: item,
-                    path: relativePath,
-                    content: content,
-                    isModified: false
-                  });
-                } catch (readError) {
-                  console.log(`Failed to read file ${relativePath}:`, readError.message);
-                }
-              }
-            }
-          } catch (statError) {
-            console.log(`Failed to stat ${relativePath}:`, statError.message);
-          }
-        }
-      } catch (readDirError) {
-        console.log(`Failed to read directory ${dirPath}:`, readDirError.message);
-      }
-    }
+    console.log('pullRepo: Reading cloned repository files.');
+    const files = await readDirectory(tempDir);
+    console.log(`pullRepo: Found ${files.length} files.`);
+    await execAsync(`rm -rf ${tempDir}`);
+    console.log('pullRepo: Cleaned up temporary directory.');
 
-    await readDirectory(tempDir);
-
-    // Clean up
-    try {
-      await execAsync(`rm -rf ${tempDir}`);
-    } catch (cleanupError) {
-      console.log('Failed to cleanup temp directory:', cleanupError.message);
-    }
-
-    return {
-      data: {
-        success: true,
-        files: files
-      }
-    };
-
+    return { data: { success: true, files: files } };
   } catch (error) {
-    console.error('Pull Repo Error:', error);
-    return {
-      data: {
-        success: false,
-        error: error.message || 'Failed to pull repository'
-      }
-    };
+    console.error('pullRepo: An unexpected error occurred.', {
+      errorMessage: error.message,
+      errorStack: error.stack,
+      fullError: error,
+    });
+    return { data: { success: false, error: error.message || 'An unknown server error occurred in pullRepo.' } };
   }
 });
 
@@ -398,87 +346,53 @@ exports.pushChanges = functions.https.onCall(async (data, context) => {
 exports.callOpenAI = functions
   .runWith({ secrets: ["OPENAI_API_KEY"] })
   .https.onCall(async (data, context) => {
-  // Initialize OpenAI client inside the function where secrets are available
-  const openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY,
-  });
-  
-  try {
-    const { message, context: projectContextString, mode = 'conversational' } = data;
-    const projectContext = JSON.parse(projectContextString || '{}');
+    console.log('callOpenAI: Function triggered.');
+    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+    
+    try {
+      const { message, context: projectContextString, mode = 'conversational' } = data;
+      console.log('callOpenAI: Received message:', message);
+      console.log('callOpenAI: Received mode:', mode);
 
-    if (!message) {
-      return {
-        data: {
-          success: false,
-          error: 'No message provided'
-        }
-      };
-    }
-
-    let systemPrompt = '';
-    let userPrompt = '';
-
-    if (mode === 'conversational') {
-      systemPrompt = `You are BuilderBox AI, a helpful coding assistant integrated into a mobile-first development environment. 
-
-Your role:
-- Help users write, debug, and improve code
-- Provide clear, actionable advice
-- Suggest code improvements and optimizations
-- Help with file creation and editing
-- Be conversational and friendly
-- Format code blocks with proper syntax highlighting
-- Provide follow-up suggestions when helpful
-
-Current context: ${projectContext ? JSON.stringify(projectContext) : 'No project context'}
-
-Guidelines:
-- Always format code blocks with \`\`\`language syntax
-- Provide actionable suggestions when possible
-- Be concise but thorough
-- If suggesting file changes, be specific about what to change
-- Use a friendly, helpful tone`;
-
-      userPrompt = message;
-    } else {
-      // Legacy plan mode
-      systemPrompt = `You are an AI coding assistant. Generate a structured plan to achieve the user's goal.`;
-      userPrompt = `Goal: ${message}\n\nProject Context: ${projectContext}`;
-    }
-
-    const completion = await openai.chat.completions.create({
-      model: 'gpt-3.5-turbo',
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt }
-      ],
-      max_tokens: 1500,
-      temperature: 0.7,
-    });
-
-    const response = completion.choices[0].message.content;
-
-    // Extract suggestions from response
-    const suggestions = extractSuggestions(response);
-
-    return {
-      data: {
-        success: true,
-        response: response,
-        suggestions: suggestions
+      if (!message) {
+        console.error('callOpenAI: No message provided.');
+        return { data: { success: false, error: 'No message provided' } };
       }
-    };
 
-  } catch (error) {
-    console.error('OpenAI API Error:', error);
-    return {
-      data: {
-        success: false,
-        error: error.message || 'Failed to get AI response'
+      const projectContext = JSON.parse(projectContextString || '{}');
+      console.log('callOpenAI: Parsed project context successfully.');
+      
+      const systemPrompt = `You are BuilderBox AI, a helpful coding assistant integrated into a mobile-first development environment. Your role is to help users write, debug, and improve code. Provide clear, actionable advice, and format code blocks with proper syntax highlighting. Be conversational and friendly. Current context: ${projectContextString}`;
+      const userPrompt = message;
+
+      console.log('callOpenAI: Sending request to OpenAI...');
+      const completion = await openai.chat.completions.create({
+        model: 'gpt-3.5-turbo',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt }
+        ],
+        max_tokens: 1500,
+        temperature: 0.7,
+      });
+
+      const response = completion.choices[0].message.content;
+      console.log('callOpenAI: Received response from OpenAI.');
+      
+      if (!response) {
+        console.error('callOpenAI: OpenAI returned an empty response.');
+        throw new Error('Empty response from AI');
       }
-    };
-  }
+
+      return { data: { success: true, response: response, suggestions: [] } };
+    } catch (error) {
+      console.error('callOpenAI: An unexpected error occurred.', {
+        errorMessage: error.message,
+        errorStack: error.stack,
+        fullError: error,
+      });
+      return { data: { success: false, error: error.message || 'An unknown server error occurred in callOpenAI.' } };
+    }
 });
 
 // Helper function to extract suggestions from AI response
