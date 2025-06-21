@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Github, Download, Upload, Settings, Smartphone, MessageCircle, Plus, Code, FileText } from 'lucide-react';
+import { Github, Download, Upload, Settings, Smartphone, MessageCircle, Plus, Code, FileText, Sparkles } from 'lucide-react';
 import FileTree from './components/FileTree';
 import VSCodeEditor from './components/VSCodeEditor';
 import Preview from './components/Preview';
@@ -105,9 +105,15 @@ function App() {
         <div className="flex items-center space-x-3">
           <div className="text-2xl">📦</div>
           <h1 className="text-xl font-bold text-white">BuilderBox</h1>
-          <span className="text-xs text-gray-400 bg-gray-700 px-2 py-1 rounded">
-            AI-Powered Dev
-          </span>
+          <div className="flex items-center space-x-2">
+            <span className="text-xs text-gray-400 bg-gray-700 px-2 py-1 rounded">
+              AI-Powered Dev
+            </span>
+            <span className="text-xs text-green-400 bg-green-900/20 px-2 py-1 rounded border border-green-500/30">
+              <Sparkles size={10} className="inline mr-1" />
+              Replit Style
+            </span>
+          </div>
         </div>
 
         <div className="flex items-center space-x-2">
@@ -125,8 +131,8 @@ function App() {
           <div className="flex items-center space-x-1 bg-gray-700 rounded-lg p-1">
             <button
               onClick={() => setLayout('chat')}
-              className={`px-3 py-1 rounded text-xs font-medium ${
-                layout === 'chat' ? 'bg-blue-600 text-white' : 'text-gray-300 hover:text-white'
+              className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
+                layout === 'chat' ? 'bg-blue-600 text-white shadow-lg' : 'text-gray-300 hover:text-white hover:bg-gray-600'
               }`}
             >
               <MessageCircle size={14} className="inline mr-1" />
@@ -134,8 +140,8 @@ function App() {
             </button>
             <button
               onClick={() => setLayout('editor')}
-              className={`px-3 py-1 rounded text-xs font-medium ${
-                layout === 'editor' ? 'bg-blue-600 text-white' : 'text-gray-300 hover:text-white'
+              className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
+                layout === 'editor' ? 'bg-blue-600 text-white shadow-lg' : 'text-gray-300 hover:text-white hover:bg-gray-600'
               }`}
             >
               <Code size={14} className="inline mr-1" />
@@ -143,8 +149,8 @@ function App() {
             </button>
             <button
               onClick={() => setLayout('preview')}
-              className={`px-3 py-1 rounded text-xs font-medium ${
-                layout === 'preview' ? 'bg-blue-600 text-white' : 'text-gray-300 hover:text-white'
+              className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
+                layout === 'preview' ? 'bg-blue-600 text-white shadow-lg' : 'text-gray-300 hover:text-white hover:bg-gray-600'
               }`}
             >
               Preview
@@ -154,7 +160,7 @@ function App() {
           {/* GitHub Actions */}
           <button
             onClick={handlePushToGitHub}
-            className="flex items-center space-x-1 bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded text-sm"
+            className="flex items-center space-x-1 bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded text-sm transition-colors"
           >
             <Upload size={16} />
             <span className="hidden sm:inline">Push</span>
@@ -238,10 +244,39 @@ function App() {
       {isMobile && layout !== 'chat' && (
         <button
           onClick={() => setLayout('chat')}
-          className="fixed bottom-6 right-6 w-14 h-14 bg-blue-600 hover:bg-blue-700 text-white rounded-full shadow-lg flex items-center justify-center z-50"
+          className="fixed bottom-6 right-6 w-14 h-14 bg-blue-600 hover:bg-blue-700 text-white rounded-full shadow-lg flex items-center justify-center z-50 transition-all hover:scale-110"
         >
           <MessageCircle size={24} />
         </button>
+      )}
+
+      {/* Welcome Message for Chat Layout */}
+      {layout === 'chat' && files.length === 0 && (
+        <div className="absolute inset-0 flex items-center justify-center bg-gray-900/50 z-10">
+          <div className="bg-gray-800 p-6 rounded-lg border border-gray-700 max-w-md text-center">
+            <div className="w-16 h-16 bg-blue-600 rounded-full flex items-center justify-center mx-auto mb-4">
+              <Sparkles size={24} className="text-white" />
+            </div>
+            <h3 className="text-lg font-semibold text-white mb-2">Welcome to BuilderBox AI</h3>
+            <p className="text-gray-300 mb-4">
+              This is the new Replit-style interface! Start by loading a repository or chatting with the AI.
+            </p>
+            <div className="flex space-x-2">
+              <button
+                onClick={() => setShowFileTree(true)}
+                className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm"
+              >
+                Load Repository
+              </button>
+              <button
+                onClick={() => setLayout('editor')}
+                className="flex-1 px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded text-sm"
+              >
+                Start Coding
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
