@@ -7,6 +7,10 @@ import ConversationalAgent from './components/ConversationalAgent';
 import { pushChanges } from './firebase';
 
 function App() {
+  console.log('🚨 App.js loaded at:', new Date().toLocaleString());
+  console.log('🚨 Current layout:', layout);
+  console.log('🚨 Is mobile:', isMobile);
+  
   const [selectedFile, setSelectedFile] = useState(null);
   const [files, setFiles] = useState([]);
   const [repoUrl, setRepoUrl] = useState('https://github.com/mtnmerc/BuilderBox');
@@ -100,6 +104,11 @@ function App() {
 
   return (
     <div className="h-screen bg-gray-900 flex flex-col">
+      {/* DEBUG BANNER - REMOVE AFTER CONFIRMING CHANGES WORK */}
+      <div className="bg-red-600 text-white text-center py-2 px-4 font-bold text-lg">
+        🚨 DEBUG: NEW REPLIT STYLE INTERFACE - DEPLOYED AT {new Date().toLocaleString()} 🚨
+      </div>
+
       {/* Header */}
       <header className="bg-gray-800 border-b border-gray-700 px-4 py-3 flex items-center justify-between">
         <div className="flex items-center space-x-3">
