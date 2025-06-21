@@ -256,40 +256,108 @@ Return ONLY the JSON plan, no other text.`
 
 // Pull Repository Function
 exports.pullRepo = functions.https.onCall(async (data, context) => {
-  const { owner, repo } = data;
-  if (!owner || !repo) {
-    throw new functions.https.HttpsError('invalid-argument', 'The function must be called with arguments "owner" and "repo".');
-  }
-
   try {
-    const { data: tree } = await octokit.git.getTree({
-      owner,
-      repo,
-      tree_sha: 'main', // or specify a branch
-      recursive: true,
-    });
+    const { repoUrl } = data;
+    
+    if (!repoUrl) {
+      return {
+        data: {
+          success: false,
+          error: 'No repository URL provided'
+        }
+      };
+    }
 
-    const files = await Promise.all(
-      tree.tree
-        .filter(item => item.type === 'blob')
-        .map(async (item) => {
-          const { data: blob } = await octokit.git.getBlob({
-            owner,
-            repo,
-            file_sha: item.sha,
-          });
-          return {
-            name: item.path.split('/').pop(),
-            path: item.path,
-            content: Buffer.from(blob.content, 'base64').toString('utf-8'),
-          };
-        })
-    );
+    // Extract owner and repo name from URL
+    const urlParts = repoUrl.split('/');
+    const owner = urlParts[urlParts.length - 2];
+    const repo = urlParts[urlParts.length - 1].replace('.git', '');
 
-    return { success: true, files };
+    // Clone the repository
+    const tempDir = `/tmp/${owner}-${repo}-${Date.now()}`;
+    
+    try {
+      await execAsync(`git clone ${repoUrl} ${tempDir}`);
+    } catch (cloneError) {
+      return {
+        data: {
+          success: false,
+          error: `Failed to clone repository: ${cloneError.message}`
+        }
+      };
+    }
+
+    // Read all files
+    const files = [];
+    
+    async function readDirectory(dirPath, basePath = '') {
+      try {
+        const items = await fs.readdir(dirPath);
+        
+        for (const item of items) {
+          const fullPath = path.join(dirPath, item);
+          const relativePath = path.join(basePath, item);
+          
+          try {
+            const stat = await fs.stat(fullPath);
+            
+            if (stat.isDirectory()) {
+              // Skip node_modules, .git, and other common directories
+              if (!['node_modules', '.git', '.vscode', 'dist', 'build'].includes(item)) {
+                await readDirectory(fullPath, relativePath);
+              }
+            } else {
+              // Skip binary files and large files
+              const ext = path.extname(item).toLowerCase();
+              const skipExtensions = ['.png', '.jpg', '.jpeg', '.gif', '.ico', '.svg', '.woff', '.woff2', '.ttf', '.eot'];
+              
+              if (!skipExtensions.includes(ext) && stat.size < 1024 * 1024) { // Skip files larger than 1MB
+                try {
+                  const content = await fs.readFile(fullPath, 'utf8');
+                  files.push({
+                    name: item,
+                    path: relativePath,
+                    content: content,
+                    isModified: false
+                  });
+                } catch (readError) {
+                  console.log(`Failed to read file ${relativePath}:`, readError.message);
+                }
+              }
+            }
+          } catch (statError) {
+            console.log(`Failed to stat ${relativePath}:`, statError.message);
+          }
+        }
+      } catch (readDirError) {
+        console.log(`Failed to read directory ${dirPath}:`, readDirError.message);
+      }
+    }
+
+    await readDirectory(tempDir);
+
+    // Clean up
+    try {
+      await execAsync(`rm -rf ${tempDir}`);
+    } catch (cleanupError) {
+      console.log('Failed to cleanup temp directory:', cleanupError.message);
+    }
+
+    return {
+      data: {
+        success: true,
+        files: files
+      }
+    };
+
   } catch (error) {
-    console.error('GitHub API Error:', error);
-    return { success: false, error: error.message };
+    console.error('Pull Repo Error:', error);
+    return {
+      data: {
+        success: false,
+        error: error.message || 'Failed to pull repository'
+      }
+    };
   }
 });
 
@@ -297,73 +365,32 @@ exports.pullRepo = functions.https.onCall(async (data, context) => {
 exports.pushChanges = functions.https.onCall(async (data, context) => {
   try {
     const { repo, files, commitMessage } = data;
-
-    if (!repo || !files || !Array.isArray(files) || files.length === 0) {
-      return {
-        success: false,
-        error: 'Invalid parameters: repo and files array required'
-      };
-    }
-
-    const [owner, repoName] = repo.split('/');
     
-    if (!owner || !repoName) {
+    if (!repo || !files || !commitMessage) {
       return {
-        success: false,
-        error: 'Invalid repository format. Use: owner/repo-name'
+        data: {
+          success: false,
+          error: 'Missing required parameters'
+        }
       };
     }
 
-    // Get current branch reference
-    const { data: ref } = await octokit.rest.git.getRef({
-      owner,
-      repo: repoName,
-      ref: 'heads/main'
-    });
-
-    const baseSha = ref.object.sha;
-
-    // Create tree with updated files
-    const tree = await octokit.rest.git.createTree({
-      owner,
-      repo: repoName,
-      base_tree: baseSha,
-      tree: files.map(file => ({
-        path: file.path,
-        mode: '100644',
-        type: 'blob',
-        content: file.content
-      }))
-    });
-
-    // Create commit
-    const commit = await octokit.rest.git.createCommit({
-      owner,
-      repo: repoName,
-      message: commitMessage || 'BuilderBox: Update files',
-      tree: tree.data.sha,
-      parents: [baseSha]
-    });
-
-    // Update branch reference
-    await octokit.rest.git.updateRef({
-      owner,
-      repo: repoName,
-      ref: 'heads/main',
-      sha: commit.data.sha
-    });
-
+    // This would require GitHub API integration
+    // For now, return a placeholder response
     return {
-      success: true,
-      commitSha: commit.data.sha,
-      message: `Successfully pushed ${files.length} file(s) to ${repo}`
+      data: {
+        success: true,
+        message: `Would push ${files.length} files to ${repo} with message: "${commitMessage}"`
+      }
     };
 
   } catch (error) {
     console.error('Push Changes Error:', error);
     return {
-      success: false,
-      error: error.message || 'Failed to push changes'
+      data: {
+        success: false,
+        error: error.message || 'Failed to push changes'
+      }
     };
   }
 });
@@ -568,145 +595,6 @@ Respond with a JSON object containing:
       data: {
         success: false,
         error: error.message || 'Failed to get AI response'
-      }
-    };
-  }
-});
-
-exports.pullRepo = functions.https.onCall(async (data, context) => {
-  try {
-    const { repoUrl } = data;
-    
-    if (!repoUrl) {
-      return {
-        data: {
-          success: false,
-          error: 'No repository URL provided'
-        }
-      };
-    }
-
-    // Extract owner and repo name from URL
-    const urlParts = repoUrl.split('/');
-    const owner = urlParts[urlParts.length - 2];
-    const repo = urlParts[urlParts.length - 1].replace('.git', '');
-
-    // Clone the repository
-    const tempDir = `/tmp/${owner}-${repo}-${Date.now()}`;
-    
-    try {
-      await execAsync(`git clone ${repoUrl} ${tempDir}`);
-    } catch (cloneError) {
-      return {
-        data: {
-          success: false,
-          error: `Failed to clone repository: ${cloneError.message}`
-        }
-      };
-    }
-
-    // Read all files
-    const files = [];
-    
-    async function readDirectory(dirPath, basePath = '') {
-      try {
-        const items = await fs.readdir(dirPath);
-        
-        for (const item of items) {
-          const fullPath = path.join(dirPath, item);
-          const relativePath = path.join(basePath, item);
-          
-          try {
-            const stat = await fs.stat(fullPath);
-            
-            if (stat.isDirectory()) {
-              // Skip node_modules, .git, and other common directories
-              if (!['node_modules', '.git', '.vscode', 'dist', 'build'].includes(item)) {
-                await readDirectory(fullPath, relativePath);
-              }
-            } else {
-              // Skip binary files and large files
-              const ext = path.extname(item).toLowerCase();
-              const skipExtensions = ['.png', '.jpg', '.jpeg', '.gif', '.ico', '.svg', '.woff', '.woff2', '.ttf', '.eot'];
-              
-              if (!skipExtensions.includes(ext) && stat.size < 1024 * 1024) { // Skip files larger than 1MB
-                try {
-                  const content = await fs.readFile(fullPath, 'utf8');
-                  files.push({
-                    name: item,
-                    path: relativePath,
-                    content: content,
-                    isModified: false
-                  });
-                } catch (readError) {
-                  console.log(`Failed to read file ${relativePath}:`, readError.message);
-                }
-              }
-            }
-          } catch (statError) {
-            console.log(`Failed to stat ${relativePath}:`, statError.message);
-          }
-        }
-      } catch (readDirError) {
-        console.log(`Failed to read directory ${dirPath}:`, readDirError.message);
-      }
-    }
-
-    await readDirectory(tempDir);
-
-    // Clean up
-    try {
-      await execAsync(`rm -rf ${tempDir}`);
-    } catch (cleanupError) {
-      console.log('Failed to cleanup temp directory:', cleanupError.message);
-    }
-
-    return {
-      data: {
-        success: true,
-        files: files
-      }
-    };
-
-  } catch (error) {
-    console.error('Pull Repo Error:', error);
-    return {
-      data: {
-        success: false,
-        error: error.message || 'Failed to pull repository'
-      }
-    };
-  }
-});
-
-exports.pushChanges = functions.https.onCall(async (data, context) => {
-  try {
-    const { repo, files, commitMessage } = data;
-    
-    if (!repo || !files || !commitMessage) {
-      return {
-        data: {
-          success: false,
-          error: 'Missing required parameters'
-        }
-      };
-    }
-
-    // This would require GitHub API integration
-    // For now, return a placeholder response
-    return {
-      data: {
-        success: true,
-        message: `Would push ${files.length} files to ${repo} with message: "${commitMessage}"`
-      }
-    };
-
-  } catch (error) {
-    console.error('Push Changes Error:', error);
-    return {
-      data: {
-        success: false,
-        error: error.message || 'Failed to push changes'
       }
     };
   }

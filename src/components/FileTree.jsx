@@ -21,20 +21,23 @@ const FileTree = ({ onFileSelect, selectedFile, files, onFilesLoaded, repoUrl, s
 
   const handleLoadRepo = async () => {
     if (!tempRepoUrl.trim()) return;
-    
     setIsLoading(true);
     try {
       const result = await pullRepo({ repoUrl: tempRepoUrl });
-      if (result.data.success) {
-        onFilesLoaded(result.data.files);
+      // Support both result.success and result.data.success for compatibility
+      const success = result.data?.success ?? result.success;
+      const files = result.data?.files ?? result.files;
+      const error = result.data?.error ?? result.error;
+      if (success) {
+        onFilesLoaded(files);
         setRepoUrl(tempRepoUrl);
         setShowRepoInput(false);
       } else {
-        alert('Failed to load repository: ' + result.data.error);
+        alert('Failed to load repository: ' + (error || 'Unknown error'));
       }
     } catch (error) {
       console.error('Load Repo Error:', error);
-      alert('Failed to load repository');
+      alert('Failed to load repository: ' + (error.message || error));
     } finally {
       setIsLoading(false);
     }

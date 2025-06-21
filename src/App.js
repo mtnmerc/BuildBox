@@ -10,19 +10,17 @@ function App() {
   const [selectedFile, setSelectedFile] = useState(null);
   const [files, setFiles] = useState([]);
   const [repoUrl, setRepoUrl] = useState('https://github.com/mtnmerc/BuilderBox');
-  const [layout, setLayout] = useState('chat'); // chat, editor, preview, split
+  const [layout, setLayout] = useState('editor'); // editor, preview, split
   const [isMobile, setIsMobile] = useState(false);
   const [showFileTree, setShowFileTree] = useState(false);
-  const [showAI, setShowAI] = useState(true);
+  const [showChat, setShowChat] = useState(true);
 
   useEffect(() => {
     const checkMobile = () => {
       setIsMobile(window.innerWidth < 768);
     };
-    
     checkMobile();
     window.addEventListener('resize', checkMobile);
-    
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
@@ -35,8 +33,8 @@ function App() {
   };
 
   const handleFileSave = (updatedFile) => {
-    setFiles(prevFiles => 
-      prevFiles.map(file => 
+    setFiles(prevFiles =>
+      prevFiles.map(file =>
         file.path === updatedFile.path ? updatedFile : file
       )
     );
@@ -61,19 +59,16 @@ function App() {
         alert('No changes to push');
         return;
       }
-
       const owner = repoUrl.split('/')[3];
       const repo = repoUrl.split('/')[4];
-
       const result = await pushChanges({
         repo: `${owner}/${repo}`,
         files: modifiedFiles,
         commitMessage: `BuilderBox: Update ${modifiedFiles.length} file(s)`
       });
-
       if (result.data.success) {
         alert('Changes pushed to GitHub successfully!');
-        setFiles(prevFiles => 
+        setFiles(prevFiles =>
           prevFiles.map(file => ({ ...file, isModified: false }))
         );
       } else {
@@ -85,19 +80,8 @@ function App() {
     }
   };
 
-  const getLayoutClass = () => {
-    switch (layout) {
-      case 'preview':
-        return 'grid-cols-1';
-      case 'split':
-        return 'grid-cols-2';
-      case 'editor':
-        return 'grid-cols-1';
-      default:
-        return 'grid-cols-1';
-    }
-  };
-
+  // Layout for desktop: sidebar (chat) + main (editor/preview)
+  // Layout for mobile: toggle between chat and editor
   return (
     <div className="h-screen bg-gray-900 flex flex-col">
       {/* Header */}
@@ -115,7 +99,6 @@ function App() {
             </span>
           </div>
         </div>
-
         <div className="flex items-center space-x-2">
           {/* Mobile Menu Button */}
           {isMobile && (
@@ -126,18 +109,8 @@ function App() {
               <FileText size={16} />
             </button>
           )}
-
           {/* Layout Controls */}
           <div className="flex items-center space-x-1 bg-gray-700 rounded-lg p-1">
-            <button
-              onClick={() => setLayout('chat')}
-              className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
-                layout === 'chat' ? 'bg-blue-600 text-white shadow-lg' : 'text-gray-300 hover:text-white hover:bg-gray-600'
-              }`}
-            >
-              <MessageCircle size={14} className="inline mr-1" />
-              Chat
-            </button>
             <button
               onClick={() => setLayout('editor')}
               className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
@@ -155,8 +128,18 @@ function App() {
             >
               Preview
             </button>
+            {!isMobile && (
+              <button
+                onClick={() => setShowChat(!showChat)}
+                className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
+                  showChat ? 'bg-blue-600 text-white shadow-lg' : 'text-gray-300 hover:text-white hover:bg-gray-600'
+                }`}
+              >
+                <MessageCircle size={14} className="inline mr-1" />
+                Chat
+              </button>
+            )}
           </div>
-
           {/* GitHub Actions */}
           <button
             onClick={handlePushToGitHub}
@@ -165,7 +148,6 @@ function App() {
             <Upload size={16} />
             <span className="hidden sm:inline">Push</span>
           </button>
-
           {/* Mobile Indicator */}
           {isMobile && (
             <div className="flex items-center space-x-1 text-yellow-400">
@@ -175,14 +157,13 @@ function App() {
           )}
         </div>
       </header>
-
       {/* Main Content */}
       <div className="flex-1 flex overflow-hidden">
-        {/* File Tree Sidebar - Hidden on mobile when not active */}
+        {/* Sidebar: File Tree (toggle on mobile) */}
         {(!isMobile || showFileTree) && (
           <div className={`${isMobile ? 'absolute z-50 h-full' : ''} w-64 bg-gray-800 text-white border-r border-gray-700`}>
-            <FileTree 
-              onFileSelect={handleFileSelect} 
+            <FileTree
+              onFileSelect={handleFileSelect}
               selectedFile={selectedFile}
               files={files}
               onFilesLoaded={setFiles}
@@ -191,20 +172,19 @@ function App() {
             />
           </div>
         )}
-
-        {/* Main Content Area */}
+        {/* Chat Sidebar (always visible on desktop, toggle on mobile) */}
+        {((!isMobile && showChat) || (isMobile && layout === 'chat')) && (
+          <div className={`w-full md:w-96 max-w-full md:max-w-xs bg-gradient-to-br from-gray-50 to-gray-100 border-r border-gray-200 flex-shrink-0 h-full`}>
+            <ConversationalAgent
+              selectedFile={selectedFile}
+              files={files}
+              onCreateFile={handleCreateFile}
+              onUpdateFile={handleFileSave}
+            />
+          </div>
+        )}
+        {/* Main Panel: Editor/Preview/Split */}
         <div className="flex-1 flex flex-col">
-          {layout === 'chat' && (
-            <div className="flex-1">
-              <ConversationalAgent 
-                selectedFile={selectedFile} 
-                files={files}
-                onCreateFile={handleCreateFile}
-                onUpdateFile={handleFileSave}
-              />
-            </div>
-          )}
-
           {layout === 'editor' && (
             <div className="flex-1">
               <VSCodeEditor
@@ -214,32 +194,16 @@ function App() {
               />
             </div>
           )}
-
           {layout === 'preview' && (
             <div className="flex-1">
-              <Preview 
-                files={files} 
-                selectedFile={selectedFile}
-              />
-            </div>
-          )}
-
-          {layout === 'split' && (
-            <div className={`grid ${getLayoutClass()} gap-0`}>
-              <VSCodeEditor
-                file={selectedFile}
-                onSave={handleFileSave}
-                onContentChange={handleFileContentChange}
-              />
-              <Preview 
-                files={files} 
+              <Preview
+                files={files}
                 selectedFile={selectedFile}
               />
             </div>
           )}
         </div>
       </div>
-
       {/* Floating Action Button - Mobile Only */}
       {isMobile && layout !== 'chat' && (
         <button
@@ -248,35 +212,6 @@ function App() {
         >
           <MessageCircle size={24} />
         </button>
-      )}
-
-      {/* Welcome Message for Chat Layout */}
-      {layout === 'chat' && files.length === 0 && (
-        <div className="absolute inset-0 flex items-center justify-center bg-gray-900/50 z-10">
-          <div className="bg-gray-800 p-6 rounded-lg border border-gray-700 max-w-md text-center">
-            <div className="w-16 h-16 bg-blue-600 rounded-full flex items-center justify-center mx-auto mb-4">
-              <Sparkles size={24} className="text-white" />
-            </div>
-            <h3 className="text-lg font-semibold text-white mb-2">Welcome to BuilderBox AI</h3>
-            <p className="text-gray-300 mb-4">
-              This is the new Replit-style interface! Start by loading a repository or chatting with the AI.
-            </p>
-            <div className="flex space-x-2">
-              <button
-                onClick={() => setShowFileTree(true)}
-                className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm"
-              >
-                Load Repository
-              </button>
-              <button
-                onClick={() => setLayout('editor')}
-                className="flex-1 px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded text-sm"
-              >
-                Start Coding
-              </button>
-            </div>
-          </div>
-        </div>
       )}
     </div>
   );
