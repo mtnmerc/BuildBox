@@ -13,9 +13,7 @@ const path = require('path');
 admin.initializeApp();
 
 // Initialize GitHub Octokit
-const octokit = new Octokit({
-  auth: process.env.GITHUB_TOKEN, // Use a personal access token for authentication
-});
+const octokit = new Octokit();
 
 // Initialize Vertex AI (for future use)
 let vertexAI;
@@ -47,11 +45,10 @@ const corsHandler = (req, res) => {
 
 // AI Code Editing Function
 exports.editWithAI = functions
-  .runWith({ secrets: ["OPENAI_API_KEY"] })
   .https.onCall(async (data, context) => {
   // Initialize OpenAI client inside the function where secrets are available
   const openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY,
+    apiKey: functions.config().openai.key,
   });
   
   try {
@@ -256,7 +253,6 @@ Return ONLY the JSON plan, no other text.`
 
 // Pull Repository Function
 exports.pullRepo = functions
-  .runWith({ secrets: ["GITHUB_TOKEN"] })
   .https.onCall(async (data, context) => {
   console.log('pullRepo: Function triggered.');
   try {
@@ -268,7 +264,7 @@ exports.pullRepo = functions
       return { data: { success: false, error: 'No repository URL provided' } };
     }
 
-    const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
+    const GITHUB_TOKEN = functions.config().github.token;
     if (!GITHUB_TOKEN) {
       console.error('pullRepo: GITHUB_TOKEN secret is not available.');
       return { data: { success: false, error: 'Authentication token is not configured on the server.' } };
@@ -343,174 +339,20 @@ exports.pushChanges = functions.https.onCall(async (data, context) => {
   }
 });
 
-exports.callOpenAI = functions
-  .runWith({ secrets: ["OPENAI_API_KEY"] })
-  .https.onCall(async (data, context) => {
-    console.log('callOpenAI: Function triggered.');
-    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-    
-    try {
-      const { message, context: projectContextString, mode = 'conversational' } = data;
-      console.log('callOpenAI: Received message:', message);
-      console.log('callOpenAI: Received mode:', mode);
-
-      if (!message) {
-        console.error('callOpenAI: No message provided.');
-        return { data: { success: false, error: 'No message provided' } };
-      }
-
-      const projectContext = JSON.parse(projectContextString || '{}');
-      console.log('callOpenAI: Parsed project context successfully.');
-      
-      const systemPrompt = `You are BuilderBox AI, a helpful coding assistant integrated into a mobile-first development environment. Your role is to help users write, debug, and improve code. Provide clear, actionable advice, and format code blocks with proper syntax highlighting. Be conversational and friendly. Current context: ${projectContextString}`;
-      const userPrompt = message;
-
-      console.log('callOpenAI: Sending request to OpenAI...');
-      const completion = await openai.chat.completions.create({
-        model: 'gpt-3.5-turbo',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt }
-        ],
-        max_tokens: 1500,
-        temperature: 0.7,
-      });
-
-      const response = completion.choices[0].message.content;
-      console.log('callOpenAI: Received response from OpenAI.');
-      
-      if (!response) {
-        console.error('callOpenAI: OpenAI returned an empty response.');
-        throw new Error('Empty response from AI');
-      }
-
-      return { data: { success: true, response: response, suggestions: [] } };
-    } catch (error) {
-      console.error('callOpenAI: An unexpected error occurred.', {
-        errorMessage: error.message,
-        errorStack: error.stack,
-        fullError: error,
-      });
-      return { data: { success: false, error: error.message || 'An unknown server error occurred in callOpenAI.' } };
-    }
-});
-
-// Helper function to extract suggestions from AI response
-function extractSuggestions(response) {
-  const suggestions = [];
-  
-  // Look for common follow-up questions or actions
-  const commonSuggestions = [
-    'Create a new component',
-    'Add error handling',
-    'Optimize performance',
-    'Add TypeScript types',
-    'Write tests',
-    'Refactor this code',
-    'Add documentation'
-  ];
-
-  // Simple heuristic: if response mentions certain topics, suggest related actions
-  const responseLower = response.toLowerCase();
-  
-  if (responseLower.includes('component') || responseLower.includes('react')) {
-    suggestions.push('Create a new React component');
-  }
-  
-  if (responseLower.includes('error') || responseLower.includes('bug')) {
-    suggestions.push('Add error handling');
-  }
-  
-  if (responseLower.includes('performance') || responseLower.includes('optimize')) {
-    suggestions.push('Optimize performance');
-  }
-  
-  if (responseLower.includes('type') || responseLower.includes('typescript')) {
-    suggestions.push('Add TypeScript types');
-  }
-
-  // Add some general suggestions if we don't have specific ones
-  if (suggestions.length === 0) {
-    suggestions.push(...commonSuggestions.slice(0, 3));
-  }
-
-  return suggestions.slice(0, 4); // Limit to 4 suggestions
-}
-
-// Legacy function for backward compatibility
-exports.editWithAI = functions
-  .runWith({ secrets: ["OPENAI_API_KEY"] })
-  .https.onCall(async (data, context) => {
-  // Initialize OpenAI client inside the function where secrets are available
-  const openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY,
-  });
-  
-  try {
-    const { prompt, projectContext, mode = 'plan' } = data;
-
-    if (!prompt) {
-      return {
-        data: {
-          success: false,
-          error: 'No prompt provided'
-        }
-      };
-    }
-
-    let systemPrompt = '';
-    let userPrompt = '';
-
-    if (mode === 'plan') {
-      systemPrompt = `You are an AI coding assistant. Generate a structured plan to achieve the user's goal.
-
-Respond with a JSON object containing:
-{
-  "goal": "The user's goal",
-  "explanation": "Brief explanation of the approach",
-  "files": [
-    {
-      "action": "create|edit|delete",
-      "filename": "path/to/file",
-      "content": "file content (for create/edit)"
-    }
-  ],
-  "dependencies": ["package1", "package2"],
-  "steps": ["Step 1", "Step 2", "Step 3"]
-}`;
-
-      userPrompt = `Goal: ${prompt}\n\nProject Context: ${JSON.stringify(projectContext)}`;
+// Helper function to read directory contents recursively
+async function readDirectory(dir) {
+  const items = await fs.readdir(dir, { withFileTypes: true });
+  let files = [];
+  for (const item of items) {
+    const fullPath = path.join(dir, item.name);
+    if (item.isDirectory()) {
+      files = files.concat(await readDirectory(fullPath));
     } else {
-      systemPrompt = `You are an AI coding assistant. Help the user with their coding task.`;
-      userPrompt = `Task: ${prompt}\n\nProject Context: ${JSON.stringify(projectContext)}`;
+      files.push({
+        path: path.relative(dir, fullPath),
+        content: await fs.readFile(fullPath, 'utf8')
+      });
     }
-
-    const completion = await openai.chat.completions.create({
-      model: 'gpt-3.5-turbo',
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt }
-      ],
-      max_tokens: 2000,
-      temperature: 0.7,
-    });
-
-    const response = completion.choices[0].message.content;
-
-    return {
-      data: {
-        success: true,
-        response: response
-      }
-    };
-
-  } catch (error) {
-    console.error('OpenAI API Error:', error);
-    return {
-      data: {
-        success: false,
-        error: error.message || 'Failed to get AI response'
-      }
-    };
   }
-}); 
+  return files;
+} 
