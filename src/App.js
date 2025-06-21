@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Github, Download, Upload, Settings, Smartphone } from 'lucide-react';
+import { Github, Download, Upload, Settings, Smartphone, MessageCircle, Plus, Code, FileText } from 'lucide-react';
 import FileTree from './components/FileTree';
 import VSCodeEditor from './components/VSCodeEditor';
 import Preview from './components/Preview';
@@ -10,8 +10,10 @@ function App() {
   const [selectedFile, setSelectedFile] = useState(null);
   const [files, setFiles] = useState([]);
   const [repoUrl, setRepoUrl] = useState('https://github.com/mtnmerc/BuilderBox');
-  const [layout, setLayout] = useState('editor'); // editor, preview, split
+  const [layout, setLayout] = useState('chat'); // chat, editor, preview, split
   const [isMobile, setIsMobile] = useState(false);
+  const [showFileTree, setShowFileTree] = useState(false);
+  const [showAI, setShowAI] = useState(true);
 
   useEffect(() => {
     const checkMobile = () => {
@@ -26,6 +28,10 @@ function App() {
 
   const handleFileSelect = (file) => {
     setSelectedFile(file);
+    if (isMobile) {
+      setShowFileTree(false);
+      setLayout('editor');
+    }
   };
 
   const handleFileSave = (updatedFile) => {
@@ -85,8 +91,10 @@ function App() {
         return 'grid-cols-1';
       case 'split':
         return 'grid-cols-2';
+      case 'editor':
+        return 'grid-cols-1';
       default:
-        return 'grid-cols-1 lg:grid-cols-2';
+        return 'grid-cols-1';
     }
   };
 
@@ -98,19 +106,39 @@ function App() {
           <div className="text-2xl">📦</div>
           <h1 className="text-xl font-bold text-white">BuilderBox</h1>
           <span className="text-xs text-gray-400 bg-gray-700 px-2 py-1 rounded">
-            Personal Dev Environment
+            AI-Powered Dev
           </span>
         </div>
 
         <div className="flex items-center space-x-2">
+          {/* Mobile Menu Button */}
+          {isMobile && (
+            <button
+              onClick={() => setShowFileTree(!showFileTree)}
+              className="p-2 rounded-lg bg-gray-700 hover:bg-gray-600 text-white"
+            >
+              <FileText size={16} />
+            </button>
+          )}
+
           {/* Layout Controls */}
           <div className="flex items-center space-x-1 bg-gray-700 rounded-lg p-1">
+            <button
+              onClick={() => setLayout('chat')}
+              className={`px-3 py-1 rounded text-xs font-medium ${
+                layout === 'chat' ? 'bg-blue-600 text-white' : 'text-gray-300 hover:text-white'
+              }`}
+            >
+              <MessageCircle size={14} className="inline mr-1" />
+              Chat
+            </button>
             <button
               onClick={() => setLayout('editor')}
               className={`px-3 py-1 rounded text-xs font-medium ${
                 layout === 'editor' ? 'bg-blue-600 text-white' : 'text-gray-300 hover:text-white'
               }`}
             >
+              <Code size={14} className="inline mr-1" />
               Editor
             </button>
             <button
@@ -121,14 +149,6 @@ function App() {
             >
               Preview
             </button>
-            <button
-              onClick={() => setLayout('split')}
-              className={`px-3 py-1 rounded text-xs font-medium ${
-                layout === 'split' ? 'bg-blue-600 text-white' : 'text-gray-300 hover:text-white'
-              }`}
-            >
-              Split
-            </button>
           </div>
 
           {/* GitHub Actions */}
@@ -137,7 +157,7 @@ function App() {
             className="flex items-center space-x-1 bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded text-sm"
           >
             <Upload size={16} />
-            <span className="hidden sm:inline">Push to GitHub</span>
+            <span className="hidden sm:inline">Push</span>
           </button>
 
           {/* Mobile Indicator */}
@@ -152,21 +172,35 @@ function App() {
 
       {/* Main Content */}
       <div className="flex-1 flex overflow-hidden">
-        {/* File Tree Sidebar */}
-        <FileTree 
-          onFileSelect={handleFileSelect} 
-          selectedFile={selectedFile}
-          files={files}
-          onFilesLoaded={setFiles}
-          repoUrl={repoUrl}
-          setRepoUrl={setRepoUrl}
-        />
+        {/* File Tree Sidebar - Hidden on mobile when not active */}
+        {(!isMobile || showFileTree) && (
+          <div className={`${isMobile ? 'absolute z-50 h-full' : ''} w-64 bg-gray-800 text-white border-r border-gray-700`}>
+            <FileTree 
+              onFileSelect={handleFileSelect} 
+              selectedFile={selectedFile}
+              files={files}
+              onFilesLoaded={setFiles}
+              repoUrl={repoUrl}
+              setRepoUrl={setRepoUrl}
+            />
+          </div>
+        )}
 
-        {/* Editor and Preview Area */}
-        <div className={`flex-1 grid ${getLayoutClass()} gap-0`}>
-          {/* Code Editor */}
-          {(layout === 'editor' || layout === 'split') && (
-            <div className="flex flex-col">
+        {/* Main Content Area */}
+        <div className="flex-1 flex flex-col">
+          {layout === 'chat' && (
+            <div className="flex-1">
+              <ConversationalAgent 
+                selectedFile={selectedFile} 
+                files={files}
+                onCreateFile={handleCreateFile}
+                onUpdateFile={handleFileSave}
+              />
+            </div>
+          )}
+
+          {layout === 'editor' && (
+            <div className="flex-1">
               <VSCodeEditor
                 file={selectedFile}
                 onSave={handleFileSave}
@@ -175,23 +209,40 @@ function App() {
             </div>
           )}
 
-          {/* Live Preview */}
-          {(layout === 'preview' || layout === 'split') && (
-            <Preview 
-              files={files} 
-              selectedFile={selectedFile}
-            />
+          {layout === 'preview' && (
+            <div className="flex-1">
+              <Preview 
+                files={files} 
+                selectedFile={selectedFile}
+              />
+            </div>
+          )}
+
+          {layout === 'split' && (
+            <div className={`grid ${getLayoutClass()} gap-0`}>
+              <VSCodeEditor
+                file={selectedFile}
+                onSave={handleFileSave}
+                onContentChange={handleFileContentChange}
+              />
+              <Preview 
+                files={files} 
+                selectedFile={selectedFile}
+              />
+            </div>
           )}
         </div>
       </div>
 
-      {/* AI Agent */}
-      <ConversationalAgent 
-        selectedFile={selectedFile} 
-        files={files}
-        onCreateFile={handleCreateFile}
-        onUpdateFile={handleFileSave}
-      />
+      {/* Floating Action Button - Mobile Only */}
+      {isMobile && layout !== 'chat' && (
+        <button
+          onClick={() => setLayout('chat')}
+          className="fixed bottom-6 right-6 w-14 h-14 bg-blue-600 hover:bg-blue-700 text-white rounded-full shadow-lg flex items-center justify-center z-50"
+        >
+          <MessageCircle size={24} />
+        </button>
+      )}
     </div>
   );
 }

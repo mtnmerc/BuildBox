@@ -3,6 +3,13 @@ const admin = require('firebase-admin');
 const OpenAI = require('openai');
 const { Octokit } = require('@octokit/rest');
 const cors = require('cors')({ origin: true });
+const { VertexAI } = require('@google-cloud/vertexai');
+const { Configuration, OpenAIApi } = require('openai');
+const axios = require('axios');
+const { exec } = require('child_process');
+const { promisify } = require('util');
+const fs = require('fs').promises;
+const path = require('path');
 
 admin.initializeApp();
 
@@ -10,6 +17,30 @@ admin.initializeApp();
 const octokit = new Octokit({
   auth: process.env.GITHUB_TOKEN, // Use a personal access token for authentication
 });
+
+// Initialize Vertex AI (for future use)
+let vertexAI;
+try {
+  vertexAI = new VertexAI({
+    project: process.env.GOOGLE_CLOUD_PROJECT || 'buildbox-50322',
+    location: 'us-central1',
+  });
+} catch (error) {
+  console.log('Vertex AI initialization failed:', error.message);
+}
+
+// Initialize OpenAI (current implementation)
+let openai;
+try {
+  const configuration = new Configuration({
+    apiKey: process.env.OPENAI_API_KEY,
+  });
+  openai = new OpenAIApi(configuration);
+} catch (error) {
+  console.log('OpenAI initialization failed:', error.message);
+}
+
+const execAsync = promisify(exec);
 
 // CORS middleware
 const corsHandler = (req, res) => {
@@ -342,6 +373,355 @@ exports.pushChanges = functions.https.onCall(async (data, context) => {
     return {
       success: false,
       error: error.message || 'Failed to push changes'
+    };
+  }
+});
+
+exports.callOpenAI = functions.https.onCall(async (data, context) => {
+  try {
+    const { message, context: projectContext, mode = 'conversational' } = data;
+
+    if (!message) {
+      return {
+        data: {
+          success: false,
+          error: 'No message provided'
+        }
+      };
+    }
+
+    // For now, use OpenAI. Later we'll switch to Vertex AI
+    if (!openai) {
+      return {
+        data: {
+          success: false,
+          error: 'AI service not configured'
+        }
+      };
+    }
+
+    let systemPrompt = '';
+    let userPrompt = '';
+
+    if (mode === 'conversational') {
+      systemPrompt = `You are BuilderBox AI, a helpful coding assistant integrated into a mobile-first development environment. 
+
+Your role:
+- Help users write, debug, and improve code
+- Provide clear, actionable advice
+- Suggest code improvements and optimizations
+- Help with file creation and editing
+- Be conversational and friendly
+- Format code blocks with proper syntax highlighting
+- Provide follow-up suggestions when helpful
+
+Current context: ${projectContext ? JSON.stringify(projectContext) : 'No project context'}
+
+Guidelines:
+- Always format code blocks with \`\`\`language syntax
+- Provide actionable suggestions when possible
+- Be concise but thorough
+- If suggesting file changes, be specific about what to change
+- Use a friendly, helpful tone`;
+
+      userPrompt = message;
+    } else {
+      // Legacy plan mode
+      systemPrompt = `You are an AI coding assistant. Generate a structured plan to achieve the user's goal.`;
+      userPrompt = `Goal: ${message}\n\nProject Context: ${projectContext}`;
+    }
+
+    const completion = await openai.createChatCompletion({
+      model: 'gpt-3.5-turbo',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt }
+      ],
+      max_tokens: 1500,
+      temperature: 0.7,
+    });
+
+    const response = completion.data.choices[0].message.content;
+
+    // Extract suggestions from response
+    const suggestions = extractSuggestions(response);
+
+    return {
+      data: {
+        success: true,
+        response: response,
+        suggestions: suggestions
+      }
+    };
+
+  } catch (error) {
+    console.error('OpenAI API Error:', error);
+    return {
+      data: {
+        success: false,
+        error: error.message || 'Failed to get AI response'
+      }
+    };
+  }
+});
+
+// Helper function to extract suggestions from AI response
+function extractSuggestions(response) {
+  const suggestions = [];
+  
+  // Look for common follow-up questions or actions
+  const commonSuggestions = [
+    'Create a new component',
+    'Add error handling',
+    'Optimize performance',
+    'Add TypeScript types',
+    'Write tests',
+    'Refactor this code',
+    'Add documentation'
+  ];
+
+  // Simple heuristic: if response mentions certain topics, suggest related actions
+  const responseLower = response.toLowerCase();
+  
+  if (responseLower.includes('component') || responseLower.includes('react')) {
+    suggestions.push('Create a new React component');
+  }
+  
+  if (responseLower.includes('error') || responseLower.includes('bug')) {
+    suggestions.push('Add error handling');
+  }
+  
+  if (responseLower.includes('performance') || responseLower.includes('optimize')) {
+    suggestions.push('Optimize performance');
+  }
+  
+  if (responseLower.includes('type') || responseLower.includes('typescript')) {
+    suggestions.push('Add TypeScript types');
+  }
+
+  // Add some general suggestions if we don't have specific ones
+  if (suggestions.length === 0) {
+    suggestions.push(...commonSuggestions.slice(0, 3));
+  }
+
+  return suggestions.slice(0, 4); // Limit to 4 suggestions
+}
+
+// Legacy function for backward compatibility
+exports.editWithAI = functions.https.onCall(async (data, context) => {
+  try {
+    const { prompt, projectContext, mode = 'plan' } = data;
+
+    if (!prompt) {
+      return {
+        data: {
+          success: false,
+          error: 'No prompt provided'
+        }
+      };
+    }
+
+    if (!openai) {
+      return {
+        data: {
+          success: false,
+          error: 'AI service not configured'
+        }
+      };
+    }
+
+    let systemPrompt = '';
+    let userPrompt = '';
+
+    if (mode === 'plan') {
+      systemPrompt = `You are an AI coding assistant. Generate a structured plan to achieve the user's goal.
+
+Respond with a JSON object containing:
+{
+  "goal": "The user's goal",
+  "explanation": "Brief explanation of the approach",
+  "files": [
+    {
+      "action": "create|edit|delete",
+      "filename": "path/to/file",
+      "content": "file content (for create/edit)"
+    }
+  ],
+  "dependencies": ["package1", "package2"],
+  "steps": ["Step 1", "Step 2", "Step 3"]
+}`;
+
+      userPrompt = `Goal: ${prompt}\n\nProject Context: ${JSON.stringify(projectContext)}`;
+    } else {
+      systemPrompt = `You are an AI coding assistant. Help the user with their coding task.`;
+      userPrompt = `Task: ${prompt}\n\nProject Context: ${JSON.stringify(projectContext)}`;
+    }
+
+    const completion = await openai.createChatCompletion({
+      model: 'gpt-3.5-turbo',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt }
+      ],
+      max_tokens: 2000,
+      temperature: 0.7,
+    });
+
+    const response = completion.data.choices[0].message.content;
+
+    return {
+      data: {
+        success: true,
+        response: response
+      }
+    };
+
+  } catch (error) {
+    console.error('OpenAI API Error:', error);
+    return {
+      data: {
+        success: false,
+        error: error.message || 'Failed to get AI response'
+      }
+    };
+  }
+});
+
+exports.pullRepo = functions.https.onCall(async (data, context) => {
+  try {
+    const { repoUrl } = data;
+    
+    if (!repoUrl) {
+      return {
+        data: {
+          success: false,
+          error: 'No repository URL provided'
+        }
+      };
+    }
+
+    // Extract owner and repo name from URL
+    const urlParts = repoUrl.split('/');
+    const owner = urlParts[urlParts.length - 2];
+    const repo = urlParts[urlParts.length - 1].replace('.git', '');
+
+    // Clone the repository
+    const tempDir = `/tmp/${owner}-${repo}-${Date.now()}`;
+    
+    try {
+      await execAsync(`git clone ${repoUrl} ${tempDir}`);
+    } catch (cloneError) {
+      return {
+        data: {
+          success: false,
+          error: `Failed to clone repository: ${cloneError.message}`
+        }
+      };
+    }
+
+    // Read all files
+    const files = [];
+    
+    async function readDirectory(dirPath, basePath = '') {
+      try {
+        const items = await fs.readdir(dirPath);
+        
+        for (const item of items) {
+          const fullPath = path.join(dirPath, item);
+          const relativePath = path.join(basePath, item);
+          
+          try {
+            const stat = await fs.stat(fullPath);
+            
+            if (stat.isDirectory()) {
+              // Skip node_modules, .git, and other common directories
+              if (!['node_modules', '.git', '.vscode', 'dist', 'build'].includes(item)) {
+                await readDirectory(fullPath, relativePath);
+              }
+            } else {
+              // Skip binary files and large files
+              const ext = path.extname(item).toLowerCase();
+              const skipExtensions = ['.png', '.jpg', '.jpeg', '.gif', '.ico', '.svg', '.woff', '.woff2', '.ttf', '.eot'];
+              
+              if (!skipExtensions.includes(ext) && stat.size < 1024 * 1024) { // Skip files larger than 1MB
+                try {
+                  const content = await fs.readFile(fullPath, 'utf8');
+                  files.push({
+                    name: item,
+                    path: relativePath,
+                    content: content,
+                    isModified: false
+                  });
+                } catch (readError) {
+                  console.log(`Failed to read file ${relativePath}:`, readError.message);
+                }
+              }
+            }
+          } catch (statError) {
+            console.log(`Failed to stat ${relativePath}:`, statError.message);
+          }
+        }
+      } catch (readDirError) {
+        console.log(`Failed to read directory ${dirPath}:`, readDirError.message);
+      }
+    }
+
+    await readDirectory(tempDir);
+
+    // Clean up
+    try {
+      await execAsync(`rm -rf ${tempDir}`);
+    } catch (cleanupError) {
+      console.log('Failed to cleanup temp directory:', cleanupError.message);
+    }
+
+    return {
+      data: {
+        success: true,
+        files: files
+      }
+    };
+
+  } catch (error) {
+    console.error('Pull Repo Error:', error);
+    return {
+      data: {
+        success: false,
+        error: error.message || 'Failed to pull repository'
+      }
+    };
+  }
+});
+
+exports.pushChanges = functions.https.onCall(async (data, context) => {
+  try {
+    const { repo, files, commitMessage } = data;
+    
+    if (!repo || !files || !commitMessage) {
+      return {
+        data: {
+          success: false,
+          error: 'Missing required parameters'
+        }
+      };
+    }
+
+    // This would require GitHub API integration
+    // For now, return a placeholder response
+    return {
+      data: {
+        success: true,
+        message: `Would push ${files.length} files to ${repo} with message: "${commitMessage}"`
+      }
+    };
+
+  } catch (error) {
+    console.error('Push Changes Error:', error);
+    return {
+      data: {
+        success: false,
+        error: error.message || 'Failed to push changes'
+      }
     };
   }
 }); 
