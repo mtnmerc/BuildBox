@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import VSCodeEmbed from './components/VSCodeEmbed';
 
 function App() {
   const [showVSCode, setShowVSCode] = useState(false);
@@ -34,16 +35,7 @@ function App() {
       {/* VS Code iframe */}
       {showVSCode && (
         <div style={{ flex: 1, position: 'relative' }}>
-          <iframe
-            src="https://codeserver.buildbox.app"
-            style={{
-              width: '100%',
-              height: '100%',
-              border: 'none'
-            }}
-            title="VS Code"
-            allow="clipboard-read; clipboard-write"
-          />
+          <VSCodeEmbed />
         </div>
       )}
 
