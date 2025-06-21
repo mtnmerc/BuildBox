@@ -9,6 +9,7 @@ import { pushChanges } from './firebase';
 function App() {
   const [selectedFile, setSelectedFile] = useState(null);
   const [files, setFiles] = useState([]);
+  const [repoUrl, setRepoUrl] = useState('https://github.com/mtnmerc/BuilderBox');
   const [layout, setLayout] = useState('editor'); // editor, preview, split
   const [isMobile, setIsMobile] = useState(false);
 
@@ -38,12 +39,13 @@ function App() {
 
   const handleFileContentChange = (content) => {
     if (selectedFile) {
-      setSelectedFile(prev => ({ ...prev, content }));
+      setSelectedFile(prev => ({ ...prev, content, isModified: true }));
     }
   };
 
-  const handleCodeUpdate = (updatedFile) => {
-    handleFileSave(updatedFile);
+  const handleCreateFile = (newFile) => {
+    setFiles(prevFiles => [...prevFiles, newFile]);
+    setSelectedFile(newFile);
   };
 
   const handlePushToGitHub = async () => {
@@ -54,15 +56,17 @@ function App() {
         return;
       }
 
+      const owner = repoUrl.split('/')[3];
+      const repo = repoUrl.split('/')[4];
+
       const result = await pushChanges({
-        repo: 'mtnmerc/BlueCollarBizWorx-1',
+        repo: `${owner}/${repo}`,
         files: modifiedFiles,
         commitMessage: `BuilderBox: Update ${modifiedFiles.length} file(s)`
       });
 
       if (result.data.success) {
         alert('Changes pushed to GitHub successfully!');
-        // Mark files as not modified
         setFiles(prevFiles => 
           prevFiles.map(file => ({ ...file, isModified: false }))
         );
@@ -152,7 +156,10 @@ function App() {
         <FileTree 
           onFileSelect={handleFileSelect} 
           selectedFile={selectedFile}
+          files={files}
           onFilesLoaded={setFiles}
+          repoUrl={repoUrl}
+          setRepoUrl={setRepoUrl}
         />
 
         {/* Editor and Preview Area */}
@@ -181,9 +188,9 @@ function App() {
       {/* AI Agent */}
       <ConversationalAgent 
         selectedFile={selectedFile} 
-        onCodeUpdate={handleFileSave}
         files={files}
-        onFilesLoaded={setFiles}
+        onCreateFile={handleCreateFile}
+        onUpdateFile={handleFileSave}
       />
     </div>
   );

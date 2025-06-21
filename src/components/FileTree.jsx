@@ -1,137 +1,144 @@
 import React, { useState, useEffect } from 'react';
-import { Folder, File, ChevronRight, ChevronDown, Github } from 'lucide-react';
+import { Folder, File, ChevronRight, ChevronDown, Github, RefreshCw, GitBranch } from 'lucide-react';
 import { pullRepo } from '../firebase';
 
-const FileTree = ({ onFileSelect, selectedFile, onFilesLoaded }) => {
-  const [files, setFiles] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [expandedFolders, setExpandedFolders] = useState(new Set());
-  const [repoLoaded, setRepoLoaded] = useState(false);
+const FileTree = ({ onFileSelect, selectedFile, files, onFilesLoaded, repoUrl, setRepoUrl }) => {
+  const [tree, setTree] = useState({});
+  const [expandedDirs, setExpandedDirs] = useState({});
+  const [isLoading, setIsLoading] = useState(false);
 
-  const loadRepo = async () => {
-    setLoading(true);
-    try {
-      const result = await pullRepo({ 
-        repo: 'mtnmerc/BuildBox',
-        branch: 'main'
-      });
-      
-      if (result.data.success) {
-        const loadedFiles = result.data.files;
-        setFiles(loadedFiles);
-        setRepoLoaded(true);
-        
-        if (onFilesLoaded) {
-          onFilesLoaded(loadedFiles);
+  useEffect(() => {
+    if (files && files.length > 0) {
+      setTree(buildTree(files));
+    } else {
+      setTree({});
+    }
+  }, [files]);
+
+  const buildTree = (fileList) => {
+    const fileTree = {};
+    fileList.forEach(file => {
+      let currentLevel = fileTree;
+      const pathParts = file.path.split('/');
+      pathParts.forEach((part, index) => {
+        if (index === pathParts.length - 1) {
+          currentLevel[part] = file;
+        } else {
+          if (!currentLevel[part]) {
+            currentLevel[part] = {};
+          }
+          currentLevel = currentLevel[part];
         }
+      });
+    });
+    return fileTree;
+  };
+
+  const toggleDir = (dir) => {
+    setExpandedDirs(prev => ({ ...prev, [dir]: !prev[dir] }));
+  };
+
+  const handleLoadRepo = async () => {
+    setIsLoading(true);
+    try {
+      const owner = repoUrl.split('/')[3];
+      const repo = repoUrl.split('/')[4];
+      if (!owner || !repo) {
+        alert('Invalid GitHub URL. Please use the format https://github.com/owner/repo');
+        setIsLoading(false);
+        return;
+      }
+      
+      const result = await pullRepo({ owner, repo });
+      if (result.data.success) {
+        onFilesLoaded(result.data.files);
       } else {
         console.error('Failed to load repo:', result.data.error);
-        alert('Failed to load repository: ' + result.data.error);
+        alert('Failed to load repository. Check the URL and ensure it is a public repository.');
       }
     } catch (error) {
-      console.error('Error loading repo:', error);
-      alert('Error loading repository. Please check your internet connection and try again.');
+      console.error('Error loading repository:', error);
+      alert('An error occurred while loading the repository.');
     } finally {
-      setLoading(false);
+      setIsLoading(false);
     }
   };
 
-  const toggleFolder = (folderPath) => {
-    const newExpanded = new Set(expandedFolders);
-    if (newExpanded.has(folderPath)) {
-      newExpanded.delete(folderPath);
-    } else {
-      newExpanded.add(folderPath);
-    }
-    setExpandedFolders(newExpanded);
-  };
-
-  const renderFileTree = (fileList, path = '') => {
-    const folders = {};
-    const files = [];
-
-    fileList.forEach(file => {
-      const relativePath = file.path.replace(path, '').split('/');
-      if (relativePath.length === 1) {
-        files.push(file);
-      } else {
-        const folderName = relativePath[0];
-        if (!folders[folderName]) {
-          folders[folderName] = [];
-        }
-        folders[folderName].push(file);
-      }
-    });
-
-    return (
-      <div className="space-y-1">
-        {Object.entries(folders).map(([folderName, folderFiles]) => {
-          const folderPath = path ? `${path}/${folderName}` : folderName;
-          const isExpanded = expandedFolders.has(folderPath);
-          
-          return (
-            <div key={folderPath}>
-              <button
-                onClick={() => toggleFolder(folderPath)}
-                className="flex items-center w-full text-left px-2 py-1 hover:bg-gray-700 rounded text-sm"
-              >
-                {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-                <Folder size={16} className="mr-2 text-blue-400" />
-                <span className="truncate">{folderName}</span>
-              </button>
-              {isExpanded && (
-                <div className="ml-4">
-                  {renderFileTree(folderFiles, folderPath)}
-                </div>
-              )}
-            </div>
-          );
-        })}
-        
-        {files.map(file => (
-          <button
-            key={file.path}
-            onClick={() => onFileSelect(file)}
-            className={`flex items-center w-full text-left px-2 py-1 hover:bg-gray-700 rounded text-sm ${
-              selectedFile?.path === file.path ? 'bg-blue-600 text-white' : ''
+  const renderTree = (node, path = '') => {
+    return Object.entries(node).map(([name, content]) => {
+      const currentPath = path ? `${path}/${name}` : name;
+      if (content.path) { // It's a file
+        return (
+          <div 
+            key={currentPath}
+            onClick={() => onFileSelect(content)}
+            className={`flex items-center space-x-2 p-1 rounded-md cursor-pointer text-sm ${
+              selectedFile && selectedFile.path === content.path 
+                ? 'bg-blue-600 text-white' 
+                : 'text-gray-300 hover:bg-gray-700'
             }`}
           >
-            <File size={16} className="mr-2 text-gray-400" />
-            <span className="truncate">{file.name}</span>
-          </button>
-        ))}
-      </div>
-    );
+            <File size={16} className="text-gray-400" />
+            <span>{name}</span>
+          </div>
+        );
+      } else { // It's a directory
+        const isExpanded = expandedDirs[currentPath];
+        return (
+          <div key={currentPath}>
+            <div 
+              onClick={() => toggleDir(currentPath)}
+              className="flex items-center space-x-2 p-1 rounded-md cursor-pointer text-sm text-gray-200 hover:bg-gray-700"
+            >
+              {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+              <Folder size={16} className="text-yellow-500" />
+              <span>{name}</span>
+            </div>
+            {isExpanded && (
+              <div className="pl-4 border-l border-gray-700 ml-2">
+                {renderTree(content, currentPath)}
+              </div>
+            )}
+          </div>
+        );
+      }
+    });
   };
 
   return (
-    <div className="bg-gray-900 border-r border-gray-700 w-64 min-w-64 h-full flex flex-col">
-      <div className="p-4 border-b border-gray-700">
-        <div className="flex items-center justify-between mb-2">
-          <h2 className="text-lg font-semibold text-white">Files</h2>
-          <Github size={20} className="text-gray-400" />
+    <div className="w-64 bg-gray-800 text-white p-3 flex flex-col h-full border-r border-gray-700">
+      <div className="mb-4">
+        <label htmlFor="repoUrl" className="text-xs font-bold text-gray-400 block mb-1">
+          GitHub Repository URL
+        </label>
+        <div className="flex items-center bg-gray-900 rounded-md">
+          <GitBranch size={16} className="text-gray-500 mx-2" />
+          <input
+            type="text"
+            id="repoUrl"
+            value={repoUrl}
+            onChange={(e) => setRepoUrl(e.target.value)}
+            className="bg-transparent w-full p-2 text-sm text-gray-200 focus:outline-none"
+            placeholder="e.g., https://github.com/owner/repo"
+          />
         </div>
-        <button
-          onClick={loadRepo}
-          disabled={loading}
-          className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white px-3 py-2 rounded text-sm font-medium"
-        >
-          {loading ? 'Loading...' : repoLoaded ? 'Reload Repo' : 'Load Repo'}
-        </button>
-        {repoLoaded && (
-          <div className="mt-2 text-xs text-green-400">
-            ✓ Repository loaded successfully
-          </div>
-        )}
       </div>
-      
-      <div className="flex-1 overflow-y-auto p-2">
-        {files.length > 0 ? (
-          renderFileTree(files)
+      <button
+        onClick={handleLoadRepo}
+        disabled={isLoading}
+        className="w-full flex items-center justify-center space-x-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-md mb-4 text-sm disabled:bg-indigo-400"
+      >
+        {isLoading ? (
+          <RefreshCw size={16} className="animate-spin" />
         ) : (
-          <div className="text-gray-400 text-sm text-center mt-8">
-            {repoLoaded ? 'No files found' : 'Click "Load Repo" to start'}
-          </div>
+          <RefreshCw size={16} />
+        )}
+        <span>{isLoading ? 'Loading...' : 'Load Repo'}</span>
+      </button>
+
+      <div className="flex-1 overflow-y-auto">
+        {Object.keys(tree).length > 0 ? renderTree(tree) : (
+          <p className="text-gray-500 text-sm">No repository loaded.</p>
         )}
       </div>
     </div>

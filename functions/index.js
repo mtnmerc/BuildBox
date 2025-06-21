@@ -1,19 +1,14 @@
 const functions = require('firebase-functions');
 const admin = require('firebase-admin');
 const OpenAI = require('openai');
-const { Octokit } = require('octokit');
+const { Octokit } = require('@octokit/rest');
 const cors = require('cors')({ origin: true });
 
 admin.initializeApp();
 
-// Initialize OpenAI
-const openai = new OpenAI({
-  apiKey: functions.config().openai.key,
-});
-
 // Initialize GitHub Octokit
 const octokit = new Octokit({
-  auth: functions.config().github.token,
+  auth: process.env.GITHUB_TOKEN, // Use a personal access token for authentication
 });
 
 // CORS middleware
@@ -29,7 +24,14 @@ const corsHandler = (req, res) => {
 };
 
 // AI Code Editing Function
-exports.editWithAI = functions.https.onCall(async (data, context) => {
+exports.editWithAI = functions
+  .runWith({ secrets: ["OPENAI_API_KEY"] })
+  .https.onCall(async (data, context) => {
+  // Initialize OpenAI inside the function
+  const openai = new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY,
+  });
+
   try {
     const { prompt, filePath, fileName, currentContent, language, repoContext, mode, projectContext } = data;
 
@@ -101,7 +103,7 @@ Return ONLY the JSON plan, no other text.`
           }
         ],
         temperature: 0.1,
-        max_tokens: 8000
+        max_tokens: 4096
       });
 
       const response = completion.choices[0].message.content.trim();
@@ -232,101 +234,40 @@ Return ONLY the JSON plan, no other text.`
 
 // Pull Repository Function
 exports.pullRepo = functions.https.onCall(async (data, context) => {
+  const { owner, repo } = data;
+  if (!owner || !repo) {
+    throw new functions.https.HttpsError('invalid-argument', 'The function must be called with arguments "owner" and "repo".');
+  }
+
   try {
-    const { repo, branch = 'main' } = data;
-
-    if (!repo) {
-      return {
-        success: false,
-        error: 'Repository name is required'
-      };
-    }
-
-    const [owner, repoName] = repo.split('/');
-    
-    if (!owner || !repoName) {
-      return {
-        success: false,
-        error: 'Invalid repository format. Use: owner/repo-name'
-      };
-    }
-
-    // Get repository contents recursively
-    const getContents = async (path = '') => {
-      try {
-        const response = await octokit.rest.repos.getContent({
-          owner,
-          repo: repoName,
-          path,
-          ref: branch
-        });
-
-        const files = [];
-        
-        if (Array.isArray(response.data)) {
-          // Directory
-          for (const item of response.data) {
-            if (item.type === 'file') {
-              // Get file content
-              const fileResponse = await octokit.rest.repos.getContent({
-                owner,
-                repo: repoName,
-                path: item.path,
-                ref: branch
-              });
-              
-              const content = Buffer.from(fileResponse.data.content, 'base64').toString('utf-8');
-              
-              files.push({
-                name: item.name,
-                path: item.path,
-                content: content,
-                size: item.size,
-                type: item.type,
-                isModified: false
-              });
-            } else if (item.type === 'dir') {
-              // Recursively get subdirectory contents
-              const subFiles = await getContents(item.path);
-              files.push(...subFiles);
-            }
-          }
-        } else {
-          // Single file
-          const content = Buffer.from(response.data.content, 'base64').toString('utf-8');
-          
-          files.push({
-            name: response.data.name,
-            path: response.data.path,
-            content: content,
-            size: response.data.size,
-            type: response.data.type,
-            isModified: false
-          });
-        }
-
-        return files;
-      } catch (error) {
-        console.error(`Error getting contents for path ${path}:`, error);
-        return [];
-      }
-    };
-
-    const files = await getContents();
-
-    return {
-      success: true,
-      files,
+    const { data: tree } = await octokit.git.getTree({
+      owner,
       repo,
-      branch
-    };
+      tree_sha: 'main', // or specify a branch
+      recursive: true,
+    });
 
+    const files = await Promise.all(
+      tree.tree
+        .filter(item => item.type === 'blob')
+        .map(async (item) => {
+          const { data: blob } = await octokit.git.getBlob({
+            owner,
+            repo,
+            file_sha: item.sha,
+          });
+          return {
+            name: item.path.split('/').pop(),
+            path: item.path,
+            content: Buffer.from(blob.content, 'base64').toString('utf-8'),
+          };
+        })
+    );
+
+    return { success: true, files };
   } catch (error) {
-    console.error('Pull Repo Error:', error);
-    return {
-      success: false,
-      error: error.message || 'Failed to pull repository'
-    };
+    console.error('GitHub API Error:', error);
+    return { success: false, error: error.message };
   }
 });
 
