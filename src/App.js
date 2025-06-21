@@ -3,7 +3,7 @@ import { Github, Download, Upload, Settings, Smartphone, MessageCircle, Plus, Co
 import FileTree from './components/FileTree';
 import VSCodeEditor from './components/VSCodeEditor';
 import Preview from './components/Preview';
-import ConversationalAgent from './components/ConversationalAgent';
+import AgentPanel from './components/AgentPanel';
 import { pushChanges } from './firebase';
 
 function App() {
@@ -134,13 +134,8 @@ function App() {
       <div className="fixed bottom-6 right-6 z-50">
         {/* Chat Window */}
         {showChat && (
-          <div className="w-[440px] h-[600px] max-h-[80vh] bg-white rounded-2xl shadow-2xl flex flex-col mb-4 border border-gray-300">
-            <ConversationalAgent
-              selectedFile={selectedFile}
-              files={files}
-              onCreateFile={handleCreateFile}
-              onUpdateFile={handleFileSave}
-            />
+          <div className="w-[440px] h-[600px] max-h-[80vh] bg-gray-800 text-white rounded-2xl shadow-2xl flex flex-col mb-4 border border-gray-700">
+            <AgentPanel files={files} onFilesUpdate={setFiles} />
           </div>
         )}
         {/* Chat Toggle Bubble */}

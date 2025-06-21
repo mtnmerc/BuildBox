@@ -43,211 +43,93 @@ const corsHandler = (req, res) => {
   });
 };
 
+const HUGGINGFACE_API_URL = "https://api-inference.huggingface.co/models/replit/replit-code-v1_5-3b";
+
 // AI Code Editing Function
-exports.editWithAI = functions
-  .https.onCall(async (data, context) => {
-  // Initialize OpenAI client inside the function where secrets are available
-  const openai = new OpenAI({
-    apiKey: functions.config().openai.key,
-  });
-  
-  try {
-    const { prompt, filePath, fileName, currentContent, language, repoContext, mode, projectContext } = data;
+exports.editWithAI = functions.runWith({ timeoutSeconds: 300 }).https.onCall(async (data, context) => {
+  const { prompt, files, mode } = data; // mode can be 'plan' or 'execute'
+  const token = functions.config().huggingface.token;
 
-    if (mode === 'plan') {
-      // New plan-and-edit mode
-      if (!prompt || !projectContext) {
-        return {
-          success: false,
-          error: 'Missing required parameters for plan mode'
-        };
-      }
+  if (!token) {
+    console.error("Hugging Face token is not configured.");
+    return { success: false, error: "AI service is not configured on the server." };
+  }
 
-      const systemPrompt = `You are an expert software architect and developer. Your task is to analyze a project and create a detailed, structured plan to achieve a specific goal.
+  if (!prompt || !files || !mode) {
+    return { success: false, error: "Missing required parameters: prompt, files, and mode." };
+  }
 
-IMPORTANT: You must respond with ONLY valid JSON in the exact format specified. No markdown, no explanations outside the JSON.
+  let systemPrompt = "";
+  if (mode === 'plan') {
+    systemPrompt = `You are an expert software architect. Analyze the user's request and the provided files to create a detailed, structured plan for code changes.
 
-Rules:
-1. Analyze the entire project structure and context
-2. Create a comprehensive plan that addresses the goal
-3. Identify all files that need to be created, modified, or deleted
-4. Provide specific, actionable steps
-5. Consider dependencies and implementation order
-6. Ensure the plan is realistic and achievable
-7. Return ONLY the JSON response, no other text
+Respond with ONLY a valid JSON object in the exact format specified below. Do not include any markdown, explanations, or text outside the JSON structure.
 
-Required JSON Format:
+JSON Format:
 {
-  "plan": "Brief description of what will be done",
-  "explanation": "Detailed explanation of the approach and reasoning",
-  "files": [
+  "plan": "A brief, one-sentence description of the overall change.",
+  "explanation": "A detailed explanation of the approach and reasoning for the changes.",
+  "files_to_edit": [
     {
-      "filename": "path/to/file.js",
-      "action": "create|edit|delete",
-      "content": "full file content (for create action)",
-      "diff": "specific changes in unified diff format (for edit action)",
-      "reason": "why this change is needed"
+      "file_path": "path/to/file.js",
+      "reason": "Why this file needs to be changed to achieve the user's goal."
     }
-  ],
-  "dependencies": ["list of any new npm packages needed"],
-  "steps": ["step1", "step2", "step3"]
-}
+  ]
+}`;
+  } else if (mode === 'execute') {
+    systemPrompt = `You are an expert code editor. Your task is to modify the provided code according to the user's request.
 
-Project Context:
-- Goal: ${projectContext.goal}
-- Mode: ${projectContext.mode}
-- Files: ${projectContext.files.length} files available
-- Selected File: ${projectContext.selectedFile ? projectContext.selectedFile.name : 'None'}
+You will be given a list of files and their current content. You must return ONLY a valid JSON object containing the full, updated content for each file you were asked to modify. Do not include any markdown, explanations, or text outside the JSON structure.
 
-Available Files:
-${projectContext.files.map(f => `${f.path} (${f.language})`).join('\n')}
-
-User Goal: ${prompt}`;
-
-      const completion = await openai.chat.completions.create({
-        model: "gpt-4",
-        messages: [
-          {
-            role: "system",
-            content: systemPrompt
-          },
-          {
-            role: "user",
-            content: `Please create a detailed plan to achieve this goal: "${prompt}"
-
-Here are the current project files:
-${projectContext.files.map(f => `\n--- ${f.path} ---\n${f.content}`).join('\n')}
-
-Return ONLY the JSON plan, no other text.`
-          }
-        ],
-        temperature: 0.1,
-        max_tokens: 4096
-      });
-
-      const response = completion.choices[0].message.content.trim();
-      
-      // Try to extract JSON from the response
-      let jsonResponse;
-      try {
-        // Remove any markdown formatting if present
-        const cleanResponse = response.replace(/```json\n?/g, '').replace(/```\n?/g, '');
-        jsonResponse = JSON.parse(cleanResponse);
-      } catch (parseError) {
-        console.error('JSON Parse Error:', parseError);
-        console.error('Raw Response:', response);
-        return {
-          success: false,
-          error: 'Invalid JSON response from AI. Please try again.'
-        };
-      }
-
-      return {
-        success: true,
-        response: JSON.stringify(jsonResponse, null, 2)
-      };
-
-    } else if (mode === 'repo') {
-      if (!prompt || !repoContext) {
-        return {
-          success: false,
-          error: 'Missing required parameters for repository mode'
-        };
-      }
-
-      const systemPrompt = `You are an expert code assistant with access to the entire repository context.
-      Your task is to analyze the codebase and provide detailed answers to the user's questions.
-      
-      Rules:
-      1. Provide clear, concise answers
-      2. Reference specific files and line numbers when relevant
-      3. Include code snippets when helpful
-      4. If you need to suggest changes, explain them clearly
-      5. Consider the entire codebase context in your answers
-      
-      Repository: ${repoContext.repo}
-      Branch: ${repoContext.branch}
-      Available Files: ${repoContext.files.map(f => f.path).join(', ')}
-      
-      User Question: ${prompt}`;
-
-      const completion = await openai.chat.completions.create({
-        model: "gpt-4",
-        messages: [
-          {
-            role: "system",
-            content: systemPrompt
-          },
-          {
-            role: "user",
-            content: `Here is the repository context:\n\n${JSON.stringify(repoContext.files.map(f => ({
-              path: f.path,
-              content: f.content
-            })), null, 2)}\n\nPlease answer this question: ${prompt}`
-          }
-        ],
-        temperature: 0.1,
-        max_tokens: 4000
-      });
-
-      return {
-        success: true,
-        response: completion.choices[0].message.content.trim()
-      };
-    } else {
-      // File mode (existing code)
-      if (!prompt || !currentContent) {
-        return {
-          success: false,
-          error: 'Missing required parameters for file mode'
-        };
-      }
-
-      const systemPrompt = `You are an expert code editor. You will receive code and a user request to modify it. 
-      Your task is to modify the code according to the user's request and return ONLY the modified code without any explanations or markdown formatting.
-      
-      Rules:
-      1. Return ONLY the modified code
-      2. Do not include any explanations, comments about changes, or markdown
-      3. Preserve the original structure and formatting as much as possible
-      4. Make minimal necessary changes to fulfill the request
-      5. If the request is unclear, make reasonable assumptions
-      6. Ensure the code is syntactically correct for the language: ${language}
-      
-      File: ${fileName}
-      Language: ${language}
-      User Request: ${prompt}`;
-
-      const completion = await openai.chat.completions.create({
-        model: "gpt-4",
-        messages: [
-          {
-            role: "system",
-            content: systemPrompt
-          },
-          {
-            role: "user",
-            content: `Here is the current code:\n\n${currentContent}\n\nPlease modify it according to this request: ${prompt}`
-          }
-        ],
-        temperature: 0.1,
-        max_tokens: 4000
-      });
-
-      const modifiedContent = completion.choices[0].message.content.trim();
-
-      return {
-        success: true,
-        modifiedContent,
-        explanation: `Code modified successfully based on: "${prompt}"`
-      };
+JSON Format:
+{
+  "file_changes": [
+    {
+      "file_path": "path/to/file.js",
+      "updated_content": "The complete, new content of the file."
     }
+  ]
+}`;
+  } else {
+    return { success: false, error: `Invalid mode specified: ${mode}.` };
+  }
+
+  const fileContext = files.map(f => `// File: ${f.path}\n${f.content}`).join('\n\n---\n\n');
+  const fullPrompt = `${systemPrompt}\n\nUser Request: "${prompt}"\n\nFull Code Context:\n${fileContext}`;
+
+  try {
+    console.log(`Calling Hugging Face API in '${mode}' mode.`);
+    const response = await axios.post(
+      HUGGINGFACE_API_URL,
+      {
+        inputs: fullPrompt,
+        parameters: {
+          max_new_tokens: 4096,
+          return_full_text: false,
+          use_cache: false,
+        },
+      },
+      {
+        headers: {
+          "Authorization": `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+      }
+    );
+
+    const generatedText = response.data[0].generated_text;
+    console.log("Received raw response from Hugging Face:", generatedText);
+
+    // Clean the response to ensure it's valid JSON
+    const jsonResponse = JSON.parse(generatedText.trim().replace(/```json/g, '').replace(/```/g, ''));
+    
+    console.log("Successfully parsed JSON response.");
+    return { success: true, data: jsonResponse };
+
   } catch (error) {
-    console.error('AI Edit Error:', error);
-    return {
-      success: false,
-      error: error.message || 'Failed to process AI request'
-    };
+    console.error("Error calling Hugging Face API:", error.response ? error.response.data : error.message);
+    const errorMessage = error.response ? JSON.stringify(error.response.data) : error.message;
+    return { success: false, error: `Failed to get response from AI model: ${errorMessage}` };
   }
 });
 
