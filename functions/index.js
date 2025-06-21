@@ -4,7 +4,6 @@ const OpenAI = require('openai');
 const { Octokit } = require('@octokit/rest');
 const cors = require('cors')({ origin: true });
 const { VertexAI } = require('@google-cloud/vertexai');
-const { Configuration, OpenAIApi } = require('openai');
 const axios = require('axios');
 const { exec } = require('child_process');
 const { promisify } = require('util');
@@ -29,16 +28,8 @@ try {
   console.log('Vertex AI initialization failed:', error.message);
 }
 
-// Initialize OpenAI (current implementation)
-let openai;
-try {
-  const configuration = new Configuration({
-    apiKey: process.env.OPENAI_API_KEY,
-  });
-  openai = new OpenAIApi(configuration);
-} catch (error) {
-  console.log('OpenAI initialization failed:', error.message);
-}
+// OpenAI client will be initialized inside functions that need it
+// since Firebase secrets are only available within functions
 
 const execAsync = promisify(exec);
 
@@ -58,11 +49,11 @@ const corsHandler = (req, res) => {
 exports.editWithAI = functions
   .runWith({ secrets: ["OPENAI_API_KEY"] })
   .https.onCall(async (data, context) => {
-  // Initialize OpenAI inside the function
+  // Initialize OpenAI client inside the function where secrets are available
   const openai = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY,
   });
-
+  
   try {
     const { prompt, filePath, fileName, currentContent, language, repoContext, mode, projectContext } = data;
 
@@ -377,7 +368,14 @@ exports.pushChanges = functions.https.onCall(async (data, context) => {
   }
 });
 
-exports.callOpenAI = functions.https.onCall(async (data, context) => {
+exports.callOpenAI = functions
+  .runWith({ secrets: ["OPENAI_API_KEY"] })
+  .https.onCall(async (data, context) => {
+  // Initialize OpenAI client inside the function where secrets are available
+  const openai = new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY,
+  });
+  
   try {
     const { message, context: projectContext, mode = 'conversational' } = data;
 
@@ -386,16 +384,6 @@ exports.callOpenAI = functions.https.onCall(async (data, context) => {
         data: {
           success: false,
           error: 'No message provided'
-        }
-      };
-    }
-
-    // For now, use OpenAI. Later we'll switch to Vertex AI
-    if (!openai) {
-      return {
-        data: {
-          success: false,
-          error: 'AI service not configured'
         }
       };
     }
@@ -431,7 +419,7 @@ Guidelines:
       userPrompt = `Goal: ${message}\n\nProject Context: ${projectContext}`;
     }
 
-    const completion = await openai.createChatCompletion({
+    const completion = await openai.chat.completions.create({
       model: 'gpt-3.5-turbo',
       messages: [
         { role: 'system', content: systemPrompt },
@@ -441,7 +429,7 @@ Guidelines:
       temperature: 0.7,
     });
 
-    const response = completion.data.choices[0].message.content;
+    const response = completion.choices[0].message.content;
 
     // Extract suggestions from response
     const suggestions = extractSuggestions(response);
@@ -508,7 +496,14 @@ function extractSuggestions(response) {
 }
 
 // Legacy function for backward compatibility
-exports.editWithAI = functions.https.onCall(async (data, context) => {
+exports.editWithAI = functions
+  .runWith({ secrets: ["OPENAI_API_KEY"] })
+  .https.onCall(async (data, context) => {
+  // Initialize OpenAI client inside the function where secrets are available
+  const openai = new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY,
+  });
+  
   try {
     const { prompt, projectContext, mode = 'plan' } = data;
 
@@ -517,15 +512,6 @@ exports.editWithAI = functions.https.onCall(async (data, context) => {
         data: {
           success: false,
           error: 'No prompt provided'
-        }
-      };
-    }
-
-    if (!openai) {
-      return {
-        data: {
-          success: false,
-          error: 'AI service not configured'
         }
       };
     }
@@ -557,7 +543,7 @@ Respond with a JSON object containing:
       userPrompt = `Task: ${prompt}\n\nProject Context: ${JSON.stringify(projectContext)}`;
     }
 
-    const completion = await openai.createChatCompletion({
+    const completion = await openai.chat.completions.create({
       model: 'gpt-3.5-turbo',
       messages: [
         { role: 'system', content: systemPrompt },
@@ -567,7 +553,7 @@ Respond with a JSON object containing:
       temperature: 0.7,
     });
 
-    const response = completion.data.choices[0].message.content;
+    const response = completion.choices[0].message.content;
 
     return {
       data: {

@@ -15,10 +15,6 @@ function App() {
   const [showFileTree, setShowFileTree] = useState(false);
   const [showAI, setShowAI] = useState(true);
 
-  console.log('🚨 App.js loaded at:', new Date().toLocaleString());
-  console.log('🚨 Current layout:', layout);
-  console.log('🚨 Is mobile:', isMobile);
-  
   useEffect(() => {
     const checkMobile = () => {
       setIsMobile(window.innerWidth < 768);
@@ -104,13 +100,6 @@ function App() {
 
   return (
     <div className="h-screen bg-gray-900 flex flex-col">
-      {/* DEBUG BANNER - REMOVE AFTER CONFIRMING CHANGES WORK */}
-      <div className="bg-red-600 text-white text-center py-4 px-4 font-bold text-2xl animate-pulse border-4 border-yellow-400">
-        🚨 DEBUG: NEW REPLIT STYLE INTERFACE - DEPLOYED AT {new Date().toLocaleString()} 🚨
-        <br />
-        <span className="text-lg">If you see this, the deployment is working!</span>
-      </div>
-
       {/* Header */}
       <header className="bg-gray-800 border-b border-gray-700 px-4 py-3 flex items-center justify-between">
         <div className="flex items-center space-x-3">
