@@ -165,9 +165,21 @@ exports.pullRepo = functions
 
     try {
       // Use sparse checkout to ignore large binary files
-      await execAsync(`git clone --depth 1 --filter=blob:none --no-checkout ${authedRepoUrl} ${tempDir}`);
-      await execAsync(`git -C ${tempDir} sparse-checkout set --no-cone "/*" "!*.msi" "!*.exe" "!*.zip"`);
-      await execAsync(`git -C ${tempDir} checkout`);
+      console.log('Executing git clone...');
+      const cloneOutput = await execAsync(`git clone --depth 1 --filter=blob:none --no-checkout ${authedRepoUrl} ${tempDir}`);
+      console.log('Clone stdout:', cloneOutput.stdout);
+      console.log('Clone stderr:', cloneOutput.stderr);
+
+      console.log('Executing git sparse-checkout set...');
+      const sparseOutput = await execAsync(`git -C ${tempDir} sparse-checkout set --no-cone "/*" "!*.msi" "!*.exe" "!*.zip"`);
+      console.log('Sparse-checkout stdout:', sparseOutput.stdout);
+      console.log('Sparse-checkout stderr:', sparseOutput.stderr);
+
+      console.log('Executing git checkout...');
+      const checkoutOutput = await execAsync(`git -C ${tempDir} checkout`);
+      console.log('Checkout stdout:', checkoutOutput.stdout);
+      console.log('Checkout stderr:', checkoutOutput.stderr);
+      
       console.log('pullRepo: Git clone with sparse checkout successful.');
     } catch (cloneError) {
       console.error('pullRepo: Git clone failed.', cloneError);
