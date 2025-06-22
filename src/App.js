@@ -1,8 +1,11 @@
-import React, { useState } from 'react';
-import VSCodeEmbed from './components/VSCodeEmbed';
+import React from 'react';
 
 function App() {
-  const [showVSCode, setShowVSCode] = useState(false);
+  const codeServerUrl = "https://code-server-production-4ab1.up.railway.app";
+
+  const openCodeServer = () => {
+    window.open(codeServerUrl, '_blank', 'noopener,noreferrer');
+  };
 
   return (
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
@@ -14,11 +17,12 @@ function App() {
         backgroundColor: '#1e1e1e',
         borderBottom: '1px solid #333'
       }}>
-        <h1>BuilderBox v2 - VS Code Integration Test</h1>
-        <p>Frontend is deploying successfully. VS Code integration ready.</p>
+        <h1>BuilderBox v2 - VS Code Integration</h1>
+        <p>Your cloud development environment.</p>
         <button 
-          onClick={() => setShowVSCode(!showVSCode)}
+          onClick={openCodeServer}
           style={{
+            marginTop: '1rem',
             padding: '0.5rem 1rem',
             backgroundColor: '#007acc',
             color: 'white',
@@ -28,36 +32,29 @@ function App() {
             fontSize: '14px'
           }}
         >
-          {showVSCode ? 'Hide VS Code' : 'Show VS Code'}
+          Open VS Code
         </button>
       </div>
 
-      {/* VS Code iframe */}
-      {showVSCode && (
-        <div style={{ flex: 1, position: 'relative' }}>
-          <VSCodeEmbed />
+      {/* Info panel */}
+      <div style={{ 
+        flex: 1, 
+        display: 'flex', 
+        alignItems: 'center', 
+        justifyContent: 'center',
+        color: 'white', 
+        backgroundColor: '#1e1e1e'
+      }}>
+        <div style={{ textAlign: 'center', maxWidth: '500px', padding: '1rem' }}>
+          <h2>Welcome to BuilderBox</h2>
+          <p style={{color: '#aaa', marginTop: '0.5rem'}}>
+            Click the button above to launch your code-server instance in a new tab. All authentication will be handled there.
+          </p>
+          <p style={{ fontSize: '12px', color: '#888', marginTop: '2rem' }}>
+            Future updates will re-integrate the editor directly into this view.
+          </p>
         </div>
-      )}
-
-      {/* Info panel when VS Code is hidden */}
-      {!showVSCode && (
-        <div style={{ 
-          flex: 1, 
-          display: 'flex', 
-          alignItems: 'center', 
-          justifyContent: 'center',
-          color: 'white', 
-          backgroundColor: '#1e1e1e'
-        }}>
-          <div style={{ textAlign: 'center' }}>
-            <h2>VS Code Integration Ready</h2>
-            <p>Click the button above to launch VS Code via code-server</p>
-            <p style={{ fontSize: '12px', color: '#888' }}>
-              This will load a full VS Code instance in an iframe
-            </p>
-          </div>
-        </div>
-      )}
+      </div>
     </div>
   );
 }
